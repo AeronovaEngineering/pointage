@@ -1,0 +1,33 @@
+-- Migration: Add missing profile columns
+-- Date: 2026-07-20
+
+-- Colonnes pour les informations personnelles
+ALTER TABLE profiles
+ADD COLUMN IF NOT EXISTS photo_url TEXT,
+ADD COLUMN IF NOT EXISTS prenom TEXT,
+ADD COLUMN IF NOT EXISTS nom TEXT,
+ADD COLUMN IF NOT EXISTS telephone TEXT,
+ADD COLUMN IF NOT EXISTS email_personnel TEXT,
+ADD COLUMN IF NOT EXISTS whatsapp TEXT,
+ADD COLUMN IF NOT EXISTS adresse TEXT,
+ADD COLUMN IF NOT EXISTS date_naissance TEXT,
+ADD COLUMN IF NOT EXISTS nationalite TEXT,
+ADD COLUMN IF NOT EXISTS cni TEXT,
+ADD COLUMN IF NOT EXISTS rib TEXT,
+ADD COLUMN IF NOT EXISTS urgence_nom TEXT,
+ADD COLUMN IF NOT EXISTS urgence_relation TEXT,
+ADD COLUMN IF NOT EXISTS urgence_telephone TEXT,
+ADD COLUMN IF NOT EXISTS mutuelle TEXT,
+ADD COLUMN IF NOT EXISTS num_secu TEXT,
+ADD COLUMN IF NOT EXISTS groupe_sanguin TEXT,
+ADD COLUMN IF NOT EXISTS allergies TEXT,
+ADD COLUMN IF NOT EXISTS profil_completed BOOLEAN DEFAULT false;
+
+-- Colonnes pour les informations professionnelles
+ALTER TABLE profiles
+ADD COLUMN IF NOT EXISTS manager TEXT,
+ADD COLUMN IF NOT EXISTS type_contrat TEXT DEFAULT 'CDI',
+ADD COLUMN IF NOT EXISTS politique_horaire TEXT DEFAULT 'Standard (35h/semaine)',
+ADD COLUMN IF NOT EXISTS date_embauche DATE,
+ADD COLUMN IF NOT EXISTS departement TEXT,
+ADD COLUMN IF NOT EXISTS poste TEXT;

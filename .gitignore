@@ -1,0 +1,56 @@
+# Local Netlify folder
+.netlify
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Environment variables — NE JAMAIS committer
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# Build output
+dist
+dist-ssr
+.output
+.vinxi
+.nitro
+*.local
+
+# Cloudflare / Wrangler
+.wrangler/
+.wrangler/deploy/config.json
+
+# Netlify (si tu ne l'utilises plus)
+.netlify
+
+# TanStack
+.tanstack/**
+
+# Supabase — état local uniquement, pas les migrations
+supabase/.branches/
+supabase/.temp/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db

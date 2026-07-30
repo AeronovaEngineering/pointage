@@ -1,0 +1,204 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-conge: oklch(0.45 0.18 305);
+  --color-ferie: oklch(0.4 0.1 190);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.005 250);
+  --foreground: oklch(0.18 0.04 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.04 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.04 260);
+  --primary: oklch(0.44 0.19 265);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.015 250);
+  --secondary-foreground: oklch(0.22 0.05 260);
+  --muted: oklch(0.955 0.015 250);
+  --muted-foreground: oklch(0.5 0.03 258);
+  --accent: oklch(0.62 0.19 258);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.62 0.17 155);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.78 0.16 78);
+  --warning-foreground: oklch(0.2 0.04 260);
+  --info: oklch(0.68 0.14 235);
+  --info-foreground: oklch(0.99 0 0);
+  --border: oklch(0.9 0.015 255);
+  --input: oklch(0.9 0.015 255);
+  --ring: oklch(0.44 0.19 265);
+  --sidebar: oklch(0.22 0.05 260);
+  --sidebar-foreground: oklch(0.96 0.01 250);
+  --sidebar-primary: oklch(0.62 0.19 258);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.28 0.05 260);
+  --sidebar-accent-foreground: oklch(0.96 0.01 250);
+  --sidebar-border: oklch(0.3 0.04 260);
+  --sidebar-ring: oklch(0.62 0.19 258);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.01em; }
+}
+
+@utility card-elevated {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+}
+
+@utility statut-present {
+  background-color: color-mix(in oklch, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in oklch, var(--color-success) 30%, transparent);
+}
+@utility statut-retard {
+  background-color: color-mix(in oklch, var(--color-warning) 20%, transparent);
+  color: oklch(0.45 0.12 78);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 40%, transparent);
+}
+@utility statut-absent {
+  background-color: color-mix(in oklch, var(--color-destructive) 15%, transparent);
+  color: var(--color-destructive);
+  border: 1px solid color-mix(in oklch, var(--color-destructive) 30%, transparent);
+}
+@utility statut-justifie {
+  background-color: color-mix(in oklch, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+  border: 1px solid color-mix(in oklch, var(--color-info) 30%, transparent);
+}
+@utility statut-conge {
+  background-color: color-mix(in oklch, var(--color-conge) 15%, transparent);
+  color: var(--color-conge);
+  border: 1px solid color-mix(in oklch, var(--color-conge) 30%, transparent);
+}
+@utility statut-ferie {
+  background-color: color-mix(in oklch, var(--color-ferie) 15%, transparent);
+  color: var(--color-ferie);
+  border: 1px solid color-mix(in oklch, var(--color-ferie) 30%, transparent);
+}
+/* ============================================
+   COULEURS DU CALENDRIER (react-day-picker)
+   ============================================ */
+
+/* Les cellules du calendrier avec statut */
+.rdp-day {
+  border-radius: 50% !important;
+  width: 40px !important;
+  height: 40px !important;
+  transition: all 0.15s ease !important;
+}
+
+/* Couleurs de fond selon le statut */
+.rdp-day[data-statut="present"] {
+  background-color: #10b981 !important; /* emerald-500 */
+  color: white !important;
+}
+
+.rdp-day[data-statut="retard"] {
+  background-color: #f59e0b !important; /* amber-500 */
+  color: white !important;
+}
+
+.rdp-day[data-statut="absent"] {
+  background-color: #ef4444 !important; /* red-500 */
+  color: white !important;
+}
+
+.rdp-day[data-statut="absent_justifie"] {
+  background-color: #60a5fa !important; /* blue-400 */
+  color: white !important;
+}
+
+.rdp-day[data-statut="conge"] {
+  background-color: #a78bfa !important; /* purple-400 */
+  color: white !important;
+}
+
+.rdp-day[data-statut="ferie"] {
+  background-color: #14b8a6 !important; /* teal-500 */
+  color: white !important;
+}
+
+/* Week-end */
+.rdp-day[data-weekend="true"] {
+  background-color: #e5e7eb !important; /* gray-200 */
+  color: #6b7280 !important;
+}
+
+/* Aujourd'hui - contour */
+.rdp-day_today:not(.rdp-day_selected) {
+  border: 2px solid var(--color-primary) !important;
+}
+
+/* Désactiver les overrides du thème par défaut */
+.rdp-day_selected {
+  background-color: var(--color-primary) !important;
+  color: white !important;
+}
+
+.rdp-day:hover:not(.rdp-day_selected) {
+  opacity: 0.8 !important;
+  transform: scale(0.95) !important;
+}
+
+/* Jour hors mois - transparent */
+.rdp-day_outside {
+  opacity: 0.3 !important;
+  background-color: transparent !important;
+}
