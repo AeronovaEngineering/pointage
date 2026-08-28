@@ -25,10 +25,11 @@ import {
   Clock, Award, FileText, CheckCircle, XCircle,
   AlertCircle, ChevronLeft, ChevronRight, Home,
   CalendarDays, MessageCircle, DollarSign, Wallet, Pencil,
-  Shield, Stethoscope, FileSignature, Coins, Banknote
+  Shield, Stethoscope, FileSignature, Coins, Banknote,
+  Timer
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatDateFR, DEMANDE_TYPE_LABELS, DEMANDE_STATUT_LABELS } from "@/lib/format";
+import { formatDateFR, DEMANDE_TYPE_LABELS, DEMANDE_STATUT_LABELS, toISODate, formatMinutesEnHeures } from "@/lib/format";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -60,14 +61,166 @@ async function callAdminFn(fn: string, body: any) {
   return json;
 }
 
+// Helper: format bilan minutes with sign
+function formatBilanMinutes(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return "—";
+  if (minutes === 0) return "0";
+  
+  const absMinutes = Math.abs(minutes);
+  const heures = Math.floor(absMinutes / 60);
+  const mins = absMinutes % 60;
+  const sign = minutes > 0 ? "+" : "-";
+  
+  if (heures === 0) return `${sign}${mins} min`;
+  if (mins === 0) return `${sign}${heures}h`;
+  return `${sign}${heures}h${mins.toString().padStart(2, "0")}`;
+}
+
+// Helper: format bilan minutes with color for PDF (text only, color handled by styling)
+function formatBilanMinutesPlain(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return "—";
+  if (minutes === 0) return "0";
+  
+  const absMinutes = Math.abs(minutes);
+  const heures = Math.floor(absMinutes / 60);
+  const mins = absMinutes % 60;
+  const sign = minutes > 0 ? "+" : "-";
+  
+  if (heures === 0) return `${sign}${mins} min`;
+  if (mins === 0) return `${sign}${heures}h`;
+  return `${sign}${heures}h${mins.toString().padStart(2, "0")}`;
+}
+
 // ---- helper: export a single employee's full presence report as PDF ----
 async function exportSingleEmployeePDF(employee: any) {
-  const { data } = await supabase
-    .from("pointages")
-    .select("date,heure_pointage,heure_sortie,statut,retard_minutes,taches_realisees,user_id")
-    .eq("user_id", employee.id)
-    .order("date", { ascending: true })
-    .limit(10000);
+  // Fetch all data needed
+  const [pointagesResult, demandesResult, feriesResult] = await Promise.all([
+    supabase
+      .from("pointages")
+      .select("date,heure_pointage,heure_sortie,statut,retard_minutes,taches_realisees,user_id,bilan_jour_minutes,temps_supplementaire")
+      .eq("user_id", employee.id)
+      .order("date", { ascending: true })
+      .limit(10000),
+    supabase
+      .from("demandes")
+      .select("date_debut,date_fin,statut,type")
+      .eq("user_id", employee.id)
+      .eq("type", "conge_annuel")
+      .eq("statut", "approuve"),
+    supabase
+      .from("jours_feries")
+      .select("date,recurrent")
+  ]);
+
+  const pointages = pointagesResult.data ?? [];
+  const conges = demandesResult.data ?? [];
+  const feries = feriesResult.data ?? [];
+
+  // Determine date range
+  const today = new Date();
+  const debut = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const fin = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  
+  // Build map of pointages by date
+  const pointagesByDate = new Map();
+  pointages.forEach((p: any) => {
+    pointagesByDate.set(p.date, p);
+  });
+
+  // Build set of dates that are in approved congé
+  const congeDates = new Set();
+  conges.forEach((c: any) => {
+    const start = new Date(c.date_debut);
+    const end = new Date(c.date_fin);
+    const current = new Date(start);
+    while (current <= end) {
+      const dateStr = toISODate(current);
+      congeDates.add(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+  });
+
+  // Build set of holiday dates
+  const ferieDates = new Set();
+  feries.forEach((f: any) => {
+    const dateStr = f.date;
+    ferieDates.add(dateStr);
+  });
+
+  // Initialize summary counters
+  let summaryPresent = 0;
+  let summaryRetard = 0;
+  let summaryAbsent = 0;
+  let summaryJustifie = 0;
+  let summaryConge = 0;
+  let summaryFerie = 0;
+  let totalRetardMinutes = 0;
+  let totalBilanMinutes = 0;
+  let totalTempsSup = 0;
+  let bilanCount = 0;
+
+  // Generate all working days in period
+  const allDays: any[] = [];
+  const current = new Date(debut);
+  while (current <= fin) {
+    const dateStr = toISODate(current);
+    // Only include working days (Mon-Fri)
+    if (current.getDay() !== 0 && current.getDay() !== 6) {
+      const pointage = pointagesByDate.get(dateStr);
+      let statut = "absent";
+      let heure_pointage = null;
+      let heure_sortie = null;
+      let retard_minutes = null;
+      let taches_realisees = null;
+      let bilan_jour_minutes = null;
+      let temps_supplementaire = null;
+
+      if (pointage) {
+        // Use actual pointage data
+        statut = pointage.statut;
+        heure_pointage = pointage.heure_pointage;
+        heure_sortie = pointage.heure_sortie;
+        retard_minutes = pointage.retard_minutes;
+        taches_realisees = pointage.taches_realisees;
+        bilan_jour_minutes = pointage.bilan_jour_minutes;
+        temps_supplementaire = pointage.temps_supplementaire;
+      } else if (ferieDates.has(dateStr)) {
+        statut = "ferie";
+      } else if (congeDates.has(dateStr)) {
+        statut = "conge";
+      } else {
+        statut = "absent";
+      }
+
+      // Update summary counters
+      if (statut === "present") summaryPresent++;
+      else if (statut === "retard") summaryRetard++;
+      else if (statut === "absent") summaryAbsent++;
+      else if (statut === "absent_justifie") summaryJustifie++;
+      else if (statut === "conge") summaryConge++;
+      else if (statut === "ferie") summaryFerie++;
+
+      if (retard_minutes) totalRetardMinutes += retard_minutes;
+      if (bilan_jour_minutes !== null && bilan_jour_minutes !== undefined) {
+        totalBilanMinutes += bilan_jour_minutes;
+        bilanCount++;
+      }
+      if (temps_supplementaire) totalTempsSup += temps_supplementaire;
+
+      allDays.push({
+        date: dateStr,
+        statut,
+        heure_pointage,
+        heure_sortie,
+        retard_minutes,
+        taches_realisees,
+        bilan_jour_minutes,
+        temps_supplementaire,
+        isFerie: ferieDates.has(dateStr)
+      });
+    }
+    current.setDate(current.getDate() + 1);
+  }
 
   const doc = new jsPDF("landscape", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -79,21 +232,77 @@ async function exportSingleEmployeePDF(employee: any) {
   doc.text(`Poste : ${employee.poste || "—"}  •  Département : ${employee.departement || "—"}`, pageWidth / 2, 22, { align: "center" });
 
   autoTable(doc, {
-    head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Tâches"]],
-    body: (data ?? []).map((r: any) => [
-      formatDateFR(r.date),
-      r.heure_pointage ?? "—",
-      r.heure_sortie ?? "—",
-      r.statut === "present" ? "Présent" :
-      r.statut === "retard" ? "Retard" :
-      r.statut === "absent" ? "Absent" :
-      r.statut === "absent_justifie" ? "Absent justifié" : "Congé",
-      r.retard_minutes ? `${Math.floor(r.retard_minutes / 60)}h${(r.retard_minutes % 60).toString().padStart(2, "0")}` : "—",
-      (r.taches_realisees ?? "").substring(0, 50),
-    ]),
+    head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Bilan", "Tâches"]],
+    body: allDays.map((r: any) => {
+      let statutLabel;
+      if (r.statut === "ferie") statutLabel = "Férié";
+      else if (r.statut === "present") statutLabel = "Présent";
+      else if (r.statut === "retard") statutLabel = "Retard";
+      else if (r.statut === "absent") statutLabel = "Absent";
+      else if (r.statut === "absent_justifie") statutLabel = "Absent justifié";
+      else if (r.statut === "conge") statutLabel = "Congé";
+      else statutLabel = r.statut || "—";
+
+      const bilanStr = formatBilanMinutesPlain(r.bilan_jour_minutes);
+      
+      // Add color indicator for bilan (just text, PDF colors not supported in autoTable easily)
+      let bilanDisplay = bilanStr;
+      if (r.bilan_jour_minutes !== null && r.bilan_jour_minutes !== undefined) {
+        if (r.bilan_jour_minutes > 0) bilanDisplay = `+${bilanStr.replace(/^\+/, '')}`;
+        else if (r.bilan_jour_minutes < 0) bilanDisplay = bilanStr;
+        else bilanDisplay = "0";
+      }
+
+      return [
+        formatDateFR(r.date),
+        r.heure_pointage ?? "—",
+        r.heure_sortie ?? "—",
+        statutLabel,
+        r.retard_minutes ? formatMinutesEnHeures(r.retard_minutes) : "—",
+        bilanDisplay,
+        r.taches_realisees ?? "",
+      ];
+    }),
     startY: 30,
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [41, 128, 185], fontSize: 9, fontStyle: "bold" },
+    columnStyles: {
+      0: { cellWidth: 25 }, // Date
+      1: { cellWidth: 20 }, // Arrivée
+      2: { cellWidth: 20 }, // Sortie
+      3: { cellWidth: 25 }, // Statut
+      4: { cellWidth: 20 }, // Retard
+      5: { cellWidth: 22 }, // Bilan
+      6: { cellWidth: 'wrap' }, // Tâches - wrap text
+    },
+  });
+
+  // Add summary section
+  const finalY = (doc as any).lastAutoTable.finalY + 8;
+  doc.setFontSize(11);
+  doc.text("Résumé de la période", pageWidth / 2, finalY, { align: "center" });
+  
+  const summaryData = [
+    ["Présents", summaryPresent.toString()],
+    ["Retards", `${summaryRetard} (${formatMinutesEnHeures(totalRetardMinutes)})`],
+    ["Absents", summaryAbsent.toString()],
+    ["Justifiés", summaryJustifie.toString()],
+    ["Congés", summaryConge.toString()],
+    ["Fériés", summaryFerie.toString()],
+    ["Total bilan", formatBilanMinutesPlain(totalBilanMinutes)],
+    ["Temps sup.", `${totalTempsSup.toFixed(1)}h`],
+  ];
+
+  autoTable(doc, {
+    body: summaryData,
+    startY: finalY + 5,
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: {
+      0: { cellWidth: 40, fontStyle: 'bold' },
+      1: { cellWidth: 40 },
+    },
+    tableWidth: 80,
+    margin: { left: (pageWidth - 80) / 2 },
   });
 
   doc.save(`fiche_${nom.replace(/\s+/g, "_")}.pdf`);
@@ -300,6 +509,7 @@ function FicheEmploye({
   onDelete: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState("informations");
+  const qc = useQueryClient();
 
   // ---- Données récupérées depuis la DB ----
   const { data: demandes = [] } = useQuery({
@@ -345,6 +555,51 @@ function FicheEmploye({
     },
   });
 
+  // ---- Heures sup queries ----
+  const { data: soldeHeuresSup = 0, refetch: refetchSolde } = useQuery({
+    queryKey: ["employee-solde-heures-sup", employee?.id],
+    enabled: !!employee,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_solde_heures_sup', { _user_id: employee.id });
+      if (error) throw error;
+      return data ?? 0;
+    },
+  });
+
+  const { data: conversionsData = [], refetch: refetchConversions } = useQuery({
+    queryKey: ["employee-conversions-heures-sup", employee?.id],
+    enabled: !!employee,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("conversions_heures_sup")
+        .select("*")
+        .eq("user_id", employee.id)
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  // ---- Fetch holidays for the current month ----
+  // DÉCLARÉ AVANT LE EARLY RETURN - RESPECTE L'ORDRE DES HOOKS
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const { data: feries = [] } = useQuery({
+    queryKey: ["employee-feries", employee?.id, now.getFullYear(), now.getMonth()],
+    enabled: !!employee,
+    queryFn: async () => {
+      const start = toISODate(monthStart);
+      const end = toISODate(monthEnd);
+      const { data } = await supabase
+        .from("jours_feries")
+        .select("date,libelle")
+        .gte("date", start)
+        .lte("date", end);
+      return data ?? [];
+    },
+  });
+
+  // ---- EARLY RETURN - TOUS LES HOOKS SONT DÉJÀ DÉCLARÉS AVANT ----
   if (!employee) {
     return (
       <Card>
@@ -359,6 +614,81 @@ function FicheEmploye({
   const congesData = demandes.filter((d: any) => d.type === "conge_annuel");
   const avancesData = demandes.filter((d: any) => d.type === "avance");
   const autresData = demandes.filter((d: any) => d.type === "sortie_anticipee" || d.type === "absence_exceptionnelle");
+
+  // Build ferieSet Map for the presence tab
+  const ferieSet = new Map(feries.map((f: any) => [f.date, f.libelle]));
+
+  // Build congeSet for the presence tab
+  const congeSet = new Set();
+  congesData.forEach((c: any) => {
+    const start = new Date(c.date_debut);
+    const end = new Date(c.date_fin);
+    const current = new Date(start);
+    while (current <= end) {
+      const dateStr = toISODate(current);
+      congeSet.add(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+  });
+
+  // ---- Calcul des stats du mois pour le résumé ----
+  const monthStats = (() => {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const today = new Date();
+    
+    const pointagesByDate = new Map();
+    pointagesData.forEach((p: any) => {
+      pointagesByDate.set(p.date, p);
+    });
+
+    const counts = { 
+      present: 0, 
+      retard: 0, 
+      absent: 0, 
+      absent_justifie: 0, 
+      conge: 0 
+    };
+
+    const current = new Date(start);
+    while (current <= end) {
+      const dateStr = toISODate(current);
+      const dayOfWeek = current.getDay();
+
+      // Skip weekends
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        // Check if it's a holiday
+        if (ferieSet.has(dateStr)) {
+          current.setDate(current.getDate() + 1);
+          continue;
+        }
+
+        // Skip future days
+        if (current > today) {
+          current.setDate(current.getDate() + 1);
+          continue;
+        }
+
+        const pointage = pointagesByDate.get(dateStr);
+        
+        if (pointage) {
+          // Use actual pointage data
+          const statut = pointage.statut;
+          counts[statut as keyof typeof counts] = ((counts[statut as keyof typeof counts] as number) || 0) + 1;
+        } else if (congeSet.has(dateStr)) {
+          // Day is covered by approved congé
+          counts.conge += 1;
+        } else {
+          // Working day with no pointage and no congé = absent
+          counts.absent += 1;
+        }
+      }
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return counts;
+  })();
 
   const nextEmployee = () => {
     const currentIndex = allEmployees.findIndex((e) => e.id === employee.id);
@@ -539,7 +869,7 @@ function FicheEmploye({
 
       {/* ===== ONGLETS ===== */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+        <TabsList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 xl:grid-cols-9">
           <TabsTrigger value="informations" className="text-xs lg:text-sm">
             <User className="w-4 h-4 mr-2" />
             Infos
@@ -559,6 +889,10 @@ function FicheEmploye({
           <TabsTrigger value="primes" className="text-xs lg:text-sm">
             <Coins className="w-4 h-4 mr-2" />
             Primes
+          </TabsTrigger>
+          <TabsTrigger value="heures_sup" className="text-xs lg:text-sm">
+            <Timer className="w-4 h-4 mr-2" />
+            Heures sup
           </TabsTrigger>
           <TabsTrigger value="sante" className="text-xs lg:text-sm">
             <Stethoscope className="w-4 h-4 mr-2" />
@@ -786,33 +1120,58 @@ function FicheEmploye({
                     <div key={d} className="text-xs font-medium text-muted-foreground p-1">{d}</div>
                   ))}
                   {Array.from({ length: 35 }, (_, i) => {
-                    const date = new Date();
-                    date.setDate(1);
-                    const firstDay = date.getDay();
-                    const day = i - firstDay + 1;
+                    const date = new Date(now.getFullYear(), now.getMonth(), 1);
+                    // BUG 1 FIX: Utiliser la même formule que EmployeeCalendar.tsx
+                    const firstDayOfWeek = (date.getDay() + 6) % 7;
+                    const day = i - firstDayOfWeek + 1;
                     if (day < 1 || day > 31) return <div key={i} className="p-2 text-sm opacity-0">-</div>;
                     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     const pointage = pointagesData.find((p: any) => p.date === dateStr);
                     const status = pointage?.statut;
+                    const currentDate = new Date();
+                    const isFuture = new Date(dateStr) > currentDate;
+                    const dow = new Date(dateStr).getDay();
+                    const isWeekend = dow === 0 || dow === 6;
+                    const isFerie = ferieSet.has(dateStr);
+                    const isConge = congeSet.has(dateStr);
 
-                    const cellBg =
-                      status === "conge" ? "bg-purple-100 border-purple-300" :
-                      status === "present" ? "bg-green-50 border-green-200" :
-                      status === "retard" ? "bg-yellow-50 border-yellow-200" :
-                      status === "absent" ? "bg-red-50 border-red-200" :
-                      status === "absent_justifie" ? "bg-orange-50 border-orange-200" :
-                      "";
+                    // Determine cell styling
+                    let cellBg = "";
+                    let statusDisplay = null;
+
+                    if (isConge) {
+                      cellBg = "bg-purple-100 border-purple-300";
+                      statusDisplay = <span className="text-purple-600 font-medium">🌴</span>;
+                    } else if (status === "present") {
+                      cellBg = "bg-green-50 border-green-200";
+                      statusDisplay = <span className="text-green-600">✓</span>;
+                    } else if (status === "retard") {
+                      cellBg = "bg-yellow-50 border-yellow-200";
+                      statusDisplay = <span className="text-yellow-600">⏰</span>;
+                    } else if (status === "absent") {
+                      cellBg = "bg-red-50 border-red-200";
+                      statusDisplay = <span className="text-red-600">✗</span>;
+                    } else if (status === "absent_justifie") {
+                      cellBg = "bg-orange-50 border-orange-200";
+                      statusDisplay = <span className="text-orange-600">📋</span>;
+                    } else if (isFerie) {
+                      cellBg = "statut-ferie";
+                      statusDisplay = <span className="text-teal-600">🏖️</span>;
+                    } else if (!status && !isFuture && !isWeekend) {
+                      // This is a working day with no pointage and not a holiday or congé = absent
+                      cellBg = "bg-red-50 border-red-200";
+                      statusDisplay = <span className="text-red-600">✗</span>;
+                    } else if (isWeekend && !status) {
+                      cellBg = "bg-gray-100 border-gray-200";
+                      statusDisplay = null;
+                    }
 
                     return (
                       <div key={i} className={`p-2 border rounded-lg text-sm ${cellBg}`}>
                         <div className="font-medium">{day}</div>
                         <div className="text-xs">
-                          {status === "present" && <span className="text-green-600">✓</span>}
-                          {status === "retard" && <span className="text-yellow-600">⏰</span>}
-                          {status === "absent" && <span className="text-red-600">✗</span>}
-                          {status === "absent_justifie" && <span className="text-orange-600">📋</span>}
-                          {status === "conge" && <span className="text-purple-600 font-medium">🌴</span>}
-                          {!status && <span className="text-gray-300">·</span>}
+                          {statusDisplay}
+                          {!statusDisplay && !cellBg && <span className="text-gray-300">·</span>}
                         </div>
                       </div>
                     );
@@ -824,6 +1183,7 @@ function FicheEmploye({
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-50 border border-red-200 inline-block" />✗ Absent</span>
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-orange-50 border border-orange-200 inline-block" />Justifié</span>
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-purple-100 border border-purple-300 inline-block" /> Congé</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm statut-ferie inline-block" /> Férié</span>
                 </div>
               </CardContent>
             </Card>
@@ -832,11 +1192,26 @@ function FicheEmploye({
               <CardHeader><CardTitle className="text-sm font-medium">Résumé du mois</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm p-2 border-b"><span className="text-muted-foreground">Présents</span><span className="font-medium">{pointagesData.filter((p: any) => p.statut === "present").length}</span></div>
-                  <div className="flex justify-between text-sm p-2 border-b"><span className="text-muted-foreground">Retards</span><span className="font-medium text-yellow-600">{pointagesData.filter((p: any) => p.statut === "retard").length}</span></div>
-                  <div className="flex justify-between text-sm p-2 border-b"><span className="text-muted-foreground">Absences</span><span className="font-medium text-red-500">{pointagesData.filter((p: any) => p.statut === "absent").length}</span></div>
-                  <div className="flex justify-between text-sm p-2 border-b"><span className="text-muted-foreground">Absences justifiées</span><span className="font-medium text-orange-600">{pointagesData.filter((p: any) => p.statut === "absent_justifie").length}</span></div>
-                  <div className="flex justify-between text-sm p-2 border-b"><span className="text-muted-foreground">Congés</span><span className="font-medium text-purple-600">{pointagesData.filter((p: any) => p.statut === "conge").length}</span></div>
+                  <div className="flex justify-between text-sm p-2 border-b">
+                    <span className="text-muted-foreground">Présents</span>
+                    <span className="font-medium">{monthStats.present}</span>
+                  </div>
+                  <div className="flex justify-between text-sm p-2 border-b">
+                    <span className="text-muted-foreground">Retards</span>
+                    <span className="font-medium text-yellow-600">{monthStats.retard}</span>
+                  </div>
+                  <div className="flex justify-between text-sm p-2 border-b">
+                    <span className="text-muted-foreground">Absences</span>
+                    <span className="font-medium text-red-500">{monthStats.absent}</span>
+                  </div>
+                  <div className="flex justify-between text-sm p-2 border-b">
+                    <span className="text-muted-foreground">Absences justifiées</span>
+                    <span className="font-medium text-orange-600">{monthStats.absent_justifie}</span>
+                  </div>
+                  <div className="flex justify-between text-sm p-2 border-b">
+                    <span className="text-muted-foreground">Congés</span>
+                    <span className="font-medium text-purple-600">{monthStats.conge}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -862,6 +1237,102 @@ function FicheEmploye({
                           {p.type && <div className="text-sm text-muted-foreground">Type : {p.type}</div>}
                         </div>
                         <div className="text-lg font-bold text-green-600 shrink-0">+{Number(p.montant).toFixed(2)} TND</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ===== ONGLET HEURES SUP ===== */}
+        <TabsContent value="heures_sup" className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Card className="lg:col-span-1">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Timer className="w-4 h-4" />
+                  Solde disponible
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center">
+                  <div className={`text-4xl font-bold ${soldeHeuresSup > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {Number(soldeHeuresSup).toFixed(2)}h
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">heures supplémentaires disponibles</div>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    {soldeHeuresSup > 0 ? '✅ Peut être converti' : '❌ Aucun solde disponible'}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Timer className="w-4 h-4" />
+                  Convertir des heures supplémentaires
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <HeuresSupConversionForm
+                  employeeId={employee.id}
+                  soldeDisponible={soldeHeuresSup}
+                  onSuccess={() => {
+                    refetchSolde();
+                    refetchConversions();
+                    qc.invalidateQueries({ queryKey: ["employee-primes", employee.id] });
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Historique des conversions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                Historique des conversions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[250px]">
+                {conversionsData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Aucune conversion effectuée</p>
+                ) : (
+                  <div className="space-y-3">
+                    {conversionsData.map((c: any) => (
+                      <div key={c.id} className="flex items-start justify-between p-3 border rounded-lg gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium flex items-center gap-2">
+                            {c.type === 'conge' ? (
+                              <Calendar className="w-4 h-4 text-purple-500" />
+                            ) : (
+                              <Coins className="w-4 h-4 text-green-500" />
+                            )}
+                            {c.type === 'conge' ? 'Converti en congé' : 'Converti en prime'}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {c.heures}h → {c.type === 'conge' 
+                              ? `${c.jours_conge} jour${c.jours_conge > 1 ? 's' : ''} de congé`
+                              : `${c.montant} TND en prime`
+                            }
+                          </div>
+                          {c.commentaire && (
+                            <div className="text-sm text-muted-foreground truncate">
+                              Commentaire : {c.commentaire}
+                            </div>
+                          )}
+                          <div className="text-xs text-muted-foreground">
+                            {formatDateFR(c.created_at)}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="shrink-0">
+                          {c.type === 'conge' ? '📅 Congé' : '💰 Prime'}
+                        </Badge>
                       </div>
                     ))}
                   </div>
@@ -992,7 +1463,128 @@ function FicheEmploye({
 }
 
 // ============================================================
-// Export PDF Dialog (unchanged)
+// HeuresSupConversionForm - Sub-component for the heures sup tab
+// ============================================================
+function HeuresSupConversionForm({
+  employeeId,
+  soldeDisponible,
+  onSuccess,
+}: {
+  employeeId: string;
+  soldeDisponible: number;
+  onSuccess: () => void;
+}) {
+  const [heures, setHeures] = useState<number>(1);
+  const [type, setType] = useState<"conge" | "prime">("conge");
+  const [commentaire, setCommentaire] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const isValid = heures > 0 && heures <= soldeDisponible;
+
+  const handleSubmit = async () => {
+    if (!isValid) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('convertir_heures_sup', {
+        _user_id: employeeId,
+        _heures: heures,
+        _type: type,
+        _commentaire: commentaire || null,
+      });
+
+      if (error) throw error;
+
+      const message = type === 'conge'
+        ? `${heures}h converties en ${Number(data.jours_conge).toFixed(2)} jours de congé`
+        : `${heures}h converties en ${data.montant} TND de prime`;
+
+      toast.success(`✅ ${message}`);
+      setHeures(1);
+      setCommentaire("");
+      onSuccess();
+    } catch (err: any) {
+      toast.error(err.message || "Erreur lors de la conversion");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label>Heures à convertir</Label>
+          <Input
+            type="number"
+            step="0.5"
+            min={0.5}
+            max={soldeDisponible}
+            value={heures}
+            onChange={(e) => setHeures(Number(e.target.value))}
+            disabled={loading}
+          />
+          <p className="text-xs text-muted-foreground">
+            Max: {Number(soldeDisponible).toFixed(1)}h
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label>Type de conversion</Label>
+          <Select
+            value={type}
+            onValueChange={(v: "conge" | "prime") => setType(v)}
+            disabled={loading}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="conge">📅 Congé (1h = 0.125 jour)</SelectItem>
+              <SelectItem value="prime">💰 Prime (1h = 5 TND)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label>Commentaire (optionnel)</Label>
+        <Input
+          placeholder="Motif de la conversion..."
+          value={commentaire}
+          onChange={(e) => setCommentaire(e.target.value)}
+          disabled={loading}
+        />
+      </div>
+
+      <div className="text-sm text-muted-foreground p-3 bg-muted rounded-lg">
+        {type === 'conge' ? (
+          <span>🔹 {heures}h → <b>{Number(heures * 0.125).toFixed(2)} jours</b> de congé</span>
+        ) : (
+          <span>🔹 {heures}h → <b>{Number(heures * 5).toFixed(2)} TND</b> de prime</span>
+        )}
+      </div>
+
+      <Button
+        onClick={handleSubmit}
+        disabled={!isValid || loading}
+        className="w-full"
+      >
+        {loading ? "Conversion en cours..." : "Convertir"}
+      </Button>
+
+      {!isValid && heures > 0 && (
+        <p className="text-xs text-destructive">
+          {heures > soldeDisponible
+            ? `Solde insuffisant (disponible: ${Number(soldeDisponible).toFixed(1)}h)`
+            : "Les heures doivent être supérieures à 0"}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Export PDF Dialog (updated)
 // ============================================================
 function ExportPDFDialog({ employees }: { employees: any[] }) {
   const [open, setOpen] = useState(false);
@@ -1001,51 +1593,215 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
   const [empId, setEmpId] = useState("tous");
 
   const generate = async () => {
-    let query = supabase
-      .from("pointages")
-      .select("date,heure_pointage,heure_sortie,statut,retard_minutes,taches_realisees,user_id")
-      .order("date", { ascending: true });
-    if (debut) query = query.gte("date", debut);
-    if (fin) query = query.lte("date", fin);
-    if (empId !== "tous") query = query.eq("user_id", empId);
-    const { data } = await query.limit(10000);
+    // Fetch all data needed
+    const [pointagesResult, demandesResult, feriesResult] = await Promise.all([
+      supabase
+        .from("pointages")
+        .select("date,heure_pointage,heure_sortie,statut,retard_minutes,taches_realisees,user_id,bilan_jour_minutes,temps_supplementaire")
+        .order("date", { ascending: true })
+        .limit(10000),
+      supabase
+        .from("demandes")
+        .select("date_debut,date_fin,statut,type,user_id")
+        .eq("type", "conge_annuel")
+        .eq("statut", "approuve"),
+      supabase
+        .from("jours_feries")
+        .select("date,recurrent")
+    ]);
+
+    const pointages = pointagesResult.data ?? [];
+    const conges = demandesResult.data ?? [];
+    const feries = feriesResult.data ?? [];
+
+    // Build map of pointages by user_id + date
+    const pointagesByUserDate = new Map();
+    pointages.forEach((p: any) => {
+      const key = `${p.user_id}|${p.date}`;
+      pointagesByUserDate.set(key, p);
+    });
+
+    // Build map of congé dates by user_id
+    const congeDatesByUser = new Map();
+    conges.forEach((c: any) => {
+      if (!congeDatesByUser.has(c.user_id)) {
+        congeDatesByUser.set(c.user_id, new Set());
+      }
+      const start = new Date(c.date_debut);
+      const end = new Date(c.date_fin);
+      const current = new Date(start);
+      while (current <= end) {
+        const dateStr = toISODate(current);
+        congeDatesByUser.get(c.user_id).add(dateStr);
+        current.setDate(current.getDate() + 1);
+      }
+    });
+
+    // Build set of holiday dates
+    const ferieDates = new Set();
+    feries.forEach((f: any) => {
+      const dateStr = f.date;
+      ferieDates.add(dateStr);
+    });
 
     const profMap = new Map(employees.map((e) => [e.id, `${e.prenom ?? ""} ${e.nom ?? ""}`.trim() || e.email]));
     const doc = new jsPDF("landscape", "mm", "a4");
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    const rowsByEmployee = new Map<string, any[]>();
-    (data ?? []).forEach((r: any) => {
-      if (!rowsByEmployee.has(r.user_id)) rowsByEmployee.set(r.user_id, []);
-      rowsByEmployee.get(r.user_id)!.push(r);
-    });
+    const dateRange = [];
+    let startDate = new Date(debut || "2024-01-01");
+    let endDate = new Date(fin || new Date());
+    
+    // Generate all working days in period
+    const current = new Date(startDate);
+    while (current <= endDate) {
+      if (current.getDay() !== 0 && current.getDay() !== 6) {
+        dateRange.push(toISODate(current));
+      }
+      current.setDate(current.getDate() + 1);
+    }
 
     const period = `${debut || "début"} au ${fin || "aujourd'hui"}`;
     let first = true;
-    for (const [uid, rows] of rowsByEmployee) {
+
+    const userIds = empId !== "tous" ? [empId] : employees.map(e => e.id);
+    
+    for (const uid of userIds) {
       if (!first) doc.addPage();
       first = false;
+
+      const userConges = congeDatesByUser.get(uid) || new Set();
+      
+      // Initialize summary counters for this employee
+      let summaryPresent = 0;
+      let summaryRetard = 0;
+      let summaryAbsent = 0;
+      let summaryJustifie = 0;
+      let summaryConge = 0;
+      let summaryFerie = 0;
+      let totalRetardMinutes = 0;
+      let totalBilanMinutes = 0;
+      let totalTempsSup = 0;
+      
+      // Build rows for this employee
+      const rows = dateRange.map(dateStr => {
+        const key = `${uid}|${dateStr}`;
+        const pointage = pointagesByUserDate.get(key);
+        
+        let statut = "absent";
+        let heure_pointage = null;
+        let heure_sortie = null;
+        let retard_minutes = null;
+        let taches_realisees = null;
+        let bilan_jour_minutes = null;
+        let temps_supplementaire = null;
+
+        if (pointage) {
+          statut = pointage.statut;
+          heure_pointage = pointage.heure_pointage;
+          heure_sortie = pointage.heure_sortie;
+          retard_minutes = pointage.retard_minutes;
+          taches_realisees = pointage.taches_realisees;
+          bilan_jour_minutes = pointage.bilan_jour_minutes;
+          temps_supplementaire = pointage.temps_supplementaire;
+        } else if (ferieDates.has(dateStr)) {
+          statut = "ferie";
+        } else if (userConges.has(dateStr)) {
+          statut = "conge";
+        } else {
+          statut = "absent";
+        }
+
+        // Update summary counters
+        if (statut === "present") summaryPresent++;
+        else if (statut === "retard") summaryRetard++;
+        else if (statut === "absent") summaryAbsent++;
+        else if (statut === "absent_justifie") summaryJustifie++;
+        else if (statut === "conge") summaryConge++;
+        else if (statut === "ferie") summaryFerie++;
+
+        if (retard_minutes) totalRetardMinutes += retard_minutes;
+        if (bilan_jour_minutes !== null && bilan_jour_minutes !== undefined) {
+          totalBilanMinutes += bilan_jour_minutes;
+        }
+        if (temps_supplementaire) totalTempsSup += temps_supplementaire;
+
+        let statutLabel;
+        if (statut === "ferie") statutLabel = "Férié";
+        else if (statut === "present") statutLabel = "Présent";
+        else if (statut === "retard") statutLabel = "Retard";
+        else if (statut === "absent") statutLabel = "Absent";
+        else if (statut === "absent_justifie") statutLabel = "Absent justifié";
+        else if (statut === "conge") statutLabel = "Congé";
+        else statutLabel = statut || "—";
+
+        const bilanStr = formatBilanMinutesPlain(bilan_jour_minutes);
+        let bilanDisplay = bilanStr;
+        if (bilan_jour_minutes !== null && bilan_jour_minutes !== undefined) {
+          if (bilan_jour_minutes > 0) bilanDisplay = `+${bilanStr.replace(/^\+/, '')}`;
+          else if (bilan_jour_minutes < 0) bilanDisplay = bilanStr;
+          else bilanDisplay = "0";
+        }
+
+        return [
+          formatDateFR(dateStr),
+          heure_pointage ?? "—",
+          heure_sortie ?? "—",
+          statutLabel,
+          retard_minutes ? formatMinutesEnHeures(retard_minutes) : "—",
+          bilanDisplay,
+          taches_realisees ?? "",
+        ];
+      });
+
       doc.setFontSize(16);
       doc.text(`Rapport de présence — ${profMap.get(uid) ?? uid}`, pageWidth / 2, 15, { align: "center" });
       doc.setFontSize(10);
       doc.text(`Période : ${period}`, pageWidth / 2, 22, { align: "center" });
 
       autoTable(doc, {
-        head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Tâches"]],
-        body: rows.map((r) => [
-          formatDateFR(r.date),
-          r.heure_pointage ?? "—",
-          r.heure_sortie ?? "—",
-          r.statut === "present" ? "Présent" :
-          r.statut === "retard" ? "Retard" :
-          r.statut === "absent" ? "Absent" :
-          r.statut === "absent_justifie" ? "Absent justifié" : "Congé",
-          r.retard_minutes ? `${Math.floor(r.retard_minutes / 60)}h${(r.retard_minutes % 60).toString().padStart(2, "0")}` : "—",
-          (r.taches_realisees ?? "").substring(0, 50),
-        ]),
+        head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Bilan", "Tâches"]],
+        body: rows,
         startY: 30,
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [41, 128, 185], fontSize: 9, fontStyle: "bold" },
+        columnStyles: {
+          0: { cellWidth: 25 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 'wrap' },
+        },
+      });
+
+      // Add summary section
+      const finalY = (doc as any).lastAutoTable.finalY + 8;
+      doc.setFontSize(11);
+      doc.text("Résumé de la période", pageWidth / 2, finalY, { align: "center" });
+      
+      const summaryData = [
+        ["Présents", summaryPresent.toString()],
+        ["Retards", `${summaryRetard} (${formatMinutesEnHeures(totalRetardMinutes)})`],
+        ["Absents", summaryAbsent.toString()],
+        ["Justifiés", summaryJustifie.toString()],
+        ["Congés", summaryConge.toString()],
+        ["Fériés", summaryFerie.toString()],
+        ["Total bilan", formatBilanMinutesPlain(totalBilanMinutes)],
+        ["Temps sup.", `${totalTempsSup.toFixed(1)}h`],
+      ];
+
+      autoTable(doc, {
+        body: summaryData,
+        startY: finalY + 5,
+        styles: { fontSize: 9, cellPadding: 3 },
+        columnStyles: {
+          0: { cellWidth: 40, fontStyle: 'bold' },
+          1: { cellWidth: 40 },
+        },
+        tableWidth: 80,
+        margin: { left: (pageWidth - 80) / 2 },
       });
     }
 

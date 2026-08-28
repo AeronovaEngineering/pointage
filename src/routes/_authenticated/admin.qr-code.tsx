@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Printer, MapPin, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,7 +33,7 @@ function QrCodePage() {
     },
   });
 
-  const [rayon, setRayon] = useState(150);
+  const [rayon, setRayon] = useState(bureau?.rayon_metres ?? 150);
   const [locating, setLocating] = useState(false);
 
   const utiliserMaPosition = () => {
@@ -127,6 +128,6 @@ function QrCodePage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+   </div>
   );
 }

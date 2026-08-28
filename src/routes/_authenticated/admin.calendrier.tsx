@@ -110,19 +110,121 @@ function SuperviseurCalendrier() {
 }
 
 function MonthlyStats({ userId }: { userId: string }) {
-  const start = new Date(); start.setDate(1);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const startStr = toISODate(start);
+  const endStr = toISODate(end);
+  const today = new Date();
+
   const { data: stats } = useQuery({
-    queryKey: ["superviseur-emp-stats", userId, toISODate(start)],
+    queryKey: ["superviseur-emp-stats", userId, startStr, endStr],
     queryFn: async () => {
-      const { data } = await supabase.from("pointages").select("statut,retard_minutes").eq("user_id", userId).gte("date", toISODate(start));
-      const counts = { present: 0, retard: 0, absent: 0, absent_justifie: 0, conge: 0, retard_total: 0 };
-      (data || []).forEach((r: any) => {
-        counts[r.statut as keyof typeof counts] = ((counts[r.statut as keyof typeof counts] as number) || 0) + 1;
-        counts.retard_total += r.retard_minutes || 0;
+      // Fetch all data needed
+      const [pointagesResult, congesResult, feriesResult] = await Promise.all([
+        supabase
+          .from("pointages")
+          .select("date,statut,retard_minutes")
+          .eq("user_id", userId)
+          .gte("date", startStr)
+          .lte("date", endStr),
+        supabase
+          .from("demandes")
+          .select("date_debut,date_fin")
+          .eq("user_id", userId)
+          .eq("type", "conge_annuel")
+          .eq("statut", "approuve")
+          .or(`date_debut.lte.${endStr},date_fin.gte.${startStr}`),
+        supabase
+          .from("jours_feries")
+          .select("date,recurrent")
+          .or(`date.gte.${startStr},date.lte.${endStr}`)
+      ]);
+
+      const pointages = pointagesResult.data ?? [];
+      const conges = congesResult.data ?? [];
+      const feries = feriesResult.data ?? [];
+
+      // Build map of pointages by date
+      const pointagesByDate = new Map();
+      pointages.forEach((p: any) => {
+        pointagesByDate.set(p.date, p);
       });
+
+      // Build set of dates covered by approved congé
+      const congeDates = new Set();
+      conges.forEach((c: any) => {
+        const debut = new Date(c.date_debut);
+        const fin = new Date(c.date_fin);
+        const current = new Date(debut);
+        while (current <= fin) {
+          const dateStr = toISODate(current);
+          congeDates.add(dateStr);
+          current.setDate(current.getDate() + 1);
+        }
+      });
+
+      // Build set of holiday dates for the month
+      const ferieDates = new Set();
+      feries.forEach((f: any) => {
+        const dateStr = f.date;
+        ferieDates.add(dateStr);
+      });
+
+      // Initialize counters
+      const counts = { 
+        present: 0, 
+        retard: 0, 
+        absent: 0, 
+        absent_justifie: 0, 
+        conge: 0, 
+        retard_total: 0 
+      };
+
+      // Iterate over all days in the month
+      const current = new Date(start);
+      while (current <= end) {
+        const dateStr = toISODate(current);
+        const dayOfWeek = current.getDay();
+
+        // Skip weekends
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          // Check if it's a holiday
+          if (ferieDates.has(dateStr)) {
+            // Holidays are skipped entirely (not counted in any stat)
+            current.setDate(current.getDate() + 1);
+            continue;
+          }
+
+          // Skip future days
+          if (current > today) {
+            current.setDate(current.getDate() + 1);
+            continue;
+          }
+
+          const pointage = pointagesByDate.get(dateStr);
+          
+          if (pointage) {
+            // Use actual pointage data
+            const statut = pointage.statut;
+            counts[statut as keyof typeof counts] = ((counts[statut as keyof typeof counts] as number) || 0) + 1;
+            counts.retard_total += pointage.retard_minutes || 0;
+          } else if (congeDates.has(dateStr)) {
+            // Day is covered by approved congé
+            counts.conge += 1;
+          } else {
+            // Working day with no pointage and no congé = absent
+            counts.absent += 1;
+          }
+        }
+
+        current.setDate(current.getDate() + 1);
+      }
+
       return counts;
     },
   });
+
   return (
     <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
       <StatMini label="Présents" value={stats?.present ?? 0} icon={CheckCircle2} color="text-success" />

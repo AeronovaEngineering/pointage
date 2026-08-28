@@ -16,6 +16,7 @@ export function EmployeeCalendar({ userId }: { userId: string }) {
   const monthIdx = cursor.getMonth();
   const days = monthDays(year, monthIdx);
   const firstDayOfWeek = (new Date(year, monthIdx, 1).getDay() + 6) % 7;
+  const today = new Date();
 
   const { data: pointages = [] } = useQuery({
     queryKey: ["pointages-month", userId, year, monthIdx],
@@ -89,33 +90,70 @@ export function EmployeeCalendar({ userId }: { userId: string }) {
           const ferie = ferieSet.get(iso);
           const dow = d.getDay();
           const isWeekend = dow === 0 || dow === 6;
-          const isToday = iso === toISODate(new Date());
+          const isToday = iso === toISODate(today);
+          const isFuture = d > today;
+          
+          // Determine the statut for this day
+          let statut = p?.statut;
+          let isAbsentWithoutPointage = false;
+          
+          // Only apply absence logic if NO pointage exists
+          if (!p && !isWeekend && !ferie && !congeSet.has(iso) && !isFuture) {
+            statut = "absent";
+            isAbsentWithoutPointage = true;
+          }
+
+          // Determine the CSS class
+          let cellClass = "bg-card";
+          
+          // PRIORITY: If pointage exists, use its statut class
+          if (p && statut) {
+            if (statut === "present") cellClass = STATUT_CLASS.present;
+            else if (statut === "retard") cellClass = STATUT_CLASS.retard;
+            else if (statut === "absent") cellClass = STATUT_CLASS.absent;
+            else if (statut === "absent_justifie") cellClass = STATUT_CLASS.absent_justifie;
+            else if (statut === "conge") cellClass = STATUT_CLASS.conge;
+          } else if (congeSet.has(iso)) {
+            cellClass = STATUT_CLASS.conge;
+          } else if (isAbsentWithoutPointage) {
+            cellClass = STATUT_CLASS.absent;
+          } else if (ferie) {
+            cellClass = "statut-ferie";
+          } else if (isWeekend) {
+            cellClass = "bg-muted/40 border-transparent text-muted-foreground";
+          }
+
+          // Determine if we should show a status label at the bottom
+          const showCongeLabel = congeSet.has(iso);
+          const showAbsentIcon = !showCongeLabel && statut === "absent";
+          const showJustifieLabel = !showCongeLabel && statut === "absent_justifie";
+          const showTimeLabel = !showCongeLabel && p?.heure_pointage && p?.statut !== "absent" && p?.statut !== "absent_justifie";
+          const showRetardLabel = !showCongeLabel && p?.retard_minutes;
+
           return (
             <div
               key={iso}
               className={cn(
                 "aspect-square p-1 rounded-md border text-xs flex flex-col items-start justify-between",
-                congeSet.has(iso) ? STATUT_CLASS.conge : p ? STATUT_CLASS[p.statut] : "bg-card",
-                ferie && "statut-ferie",
-                isWeekend && !p && !ferie && "bg-muted/40 border-transparent text-muted-foreground",
+                cellClass,
                 isToday && "ring-2 ring-primary",
               )}
-              title={ferie || (p ? STATUT_LABELS[p.statut] : "")}
+              title={ferie || (p ? STATUT_LABELS[p.statut] : isAbsentWithoutPointage ? "Absent" : "")}
             >
               <span className="font-medium">{d.getDate()}</span>
-              {congeSet.has(iso) && <span className="text-[10px] opacity-80">Congé</span>}
-              {!congeSet.has(iso) && p?.statut === "absent" && <XCircle className="w-3 h-3 text-destructive" />}
-              {!congeSet.has(iso) && p?.statut === "absent_justifie" && <span className="text-[10px] opacity-80">Justifié</span>}
-              {!congeSet.has(iso) && p?.heure_pointage && p?.statut !== "absent" && p?.statut !== "absent_justifie" && (
+              {showCongeLabel && <span className="text-[10px] opacity-80">Congé</span>}
+              {showAbsentIcon && <XCircle className="w-3 h-3 text-destructive" />}
+              {showJustifieLabel && <span className="text-[10px] opacity-80">Justifié</span>}
+              {showTimeLabel && (
                 <span className="text-[10px] opacity-80">{p.heure_pointage.slice(0, 5)}</span>
               )}
-              {!congeSet.has(iso) && p?.retard_minutes ? <span className="text-[10px] opacity-80">+{formatMinutesEnHeures(p.retard_minutes)}</span> : null}
+              {showRetardLabel && <span className="text-[10px] opacity-80">+{formatMinutesEnHeures(p.retard_minutes)}</span>}
             </div>
           );
         })}
       </div>
 
-      {/* 🟢 LÉGENDE - AJOUT DE variant="outline" */}
+      {/* 🟢 LÉGENDE */}
       <div className="mt-4 flex flex-wrap gap-2 text-xs">
         <Badge variant="outline" className="statut-present border">Présent</Badge>
         <Badge variant="outline" className="statut-retard border">Retard</Badge>

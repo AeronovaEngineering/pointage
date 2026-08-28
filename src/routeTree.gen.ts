@@ -9,24 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedProfilRouteImport } from './routes/_authenticated/profil'
-import { Route as AuthenticatedPointageScanRouteImport } from './routes/_authenticated/pointage-scan'
-import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
-import { Route as AuthenticatedMesDemandesRouteImport } from './routes/_authenticated/mes-demandes'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedAdminQrCodeRouteImport } from './routes/_authenticated/admin.qr-code'
-import { Route as AuthenticatedAdminFeriesRouteImport } from './routes/_authenticated/admin.feries'
-import { Route as AuthenticatedAdminEmployesRouteImport } from './routes/_authenticated/admin.employes'
-import { Route as AuthenticatedAdminDemandesRouteImport } from './routes/_authenticated/admin.demandes'
+import { Route as AuthenticatedMesDemandesRouteImport } from './routes/_authenticated/mes-demandes'
+import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedPointageScanRouteImport } from './routes/_authenticated/pointage-scan'
+import { Route as AuthenticatedProfilRouteImport } from './routes/_authenticated/profil'
 import { Route as AuthenticatedAdminCalendrierRouteImport } from './routes/_authenticated/admin.calendrier'
+import { Route as AuthenticatedAdminDemandesRouteImport } from './routes/_authenticated/admin.demandes'
+import { Route as AuthenticatedAdminEmployesRouteImport } from './routes/_authenticated/admin.employes'
+import { Route as AuthenticatedAdminFeriesRouteImport } from './routes/_authenticated/admin.feries'
+import { Route as AuthenticatedAdminQrCodeRouteImport } from './routes/_authenticated/admin.qr-code'
 
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -34,24 +38,20 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedProfilRoute = AuthenticatedProfilRouteImport.update({
-  id: '/profil',
-  path: '/profil',
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedPointageScanRoute =
-  AuthenticatedPointageScanRouteImport.update({
-    id: '/pointage-scan',
-    path: '/pointage-scan',
+const AuthenticatedMesDemandesRoute =
+  AuthenticatedMesDemandesRouteImport.update({
+    id: '/mes-demandes',
+    path: '/mes-demandes',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedNotificationsRoute =
@@ -60,33 +60,21 @@ const AuthenticatedNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedMesDemandesRoute =
-  AuthenticatedMesDemandesRouteImport.update({
-    id: '/mes-demandes',
-    path: '/mes-demandes',
+const AuthenticatedPointageScanRoute =
+  AuthenticatedPointageScanRouteImport.update({
+    id: '/pointage-scan',
+    path: '/pointage-scan',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+const AuthenticatedProfilRoute = AuthenticatedProfilRouteImport.update({
+  id: '/profil',
+  path: '/profil',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedAdminQrCodeRoute =
-  AuthenticatedAdminQrCodeRouteImport.update({
-    id: '/admin/qr-code',
-    path: '/admin/qr-code',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedAdminFeriesRoute =
-  AuthenticatedAdminFeriesRouteImport.update({
-    id: '/admin/feries',
-    path: '/admin/feries',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedAdminEmployesRoute =
-  AuthenticatedAdminEmployesRouteImport.update({
-    id: '/admin/employes',
-    path: '/admin/employes',
+const AuthenticatedAdminCalendrierRoute =
+  AuthenticatedAdminCalendrierRouteImport.update({
+    id: '/admin/calendrier',
+    path: '/admin/calendrier',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminDemandesRoute =
@@ -95,10 +83,22 @@ const AuthenticatedAdminDemandesRoute =
     path: '/admin/demandes',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedAdminCalendrierRoute =
-  AuthenticatedAdminCalendrierRouteImport.update({
-    id: '/admin/calendrier',
-    path: '/admin/calendrier',
+const AuthenticatedAdminEmployesRoute =
+  AuthenticatedAdminEmployesRouteImport.update({
+    id: '/admin/employes',
+    path: '/admin/employes',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAdminFeriesRoute =
+  AuthenticatedAdminFeriesRouteImport.update({
+    id: '/admin/feries',
+    path: '/admin/feries',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAdminQrCodeRoute =
+  AuthenticatedAdminQrCodeRouteImport.update({
+    id: '/admin/qr-code',
+    path: '/admin/qr-code',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 
@@ -207,18 +207,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -228,32 +221,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/profil': {
-      id: '/_authenticated/profil'
-      path: '/profil'
-      fullPath: '/profil'
-      preLoaderRoute: typeof AuthenticatedProfilRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/pointage-scan': {
-      id: '/_authenticated/pointage-scan'
-      path: '/pointage-scan'
-      fullPath: '/pointage-scan'
-      preLoaderRoute: typeof AuthenticatedPointageScanRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/notifications': {
-      id: '/_authenticated/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mes-demandes': {
@@ -263,32 +249,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMesDemandesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+    '/_authenticated/notifications': {
+      id: '/_authenticated/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/admin/qr-code': {
-      id: '/_authenticated/admin/qr-code'
-      path: '/admin/qr-code'
-      fullPath: '/admin/qr-code'
-      preLoaderRoute: typeof AuthenticatedAdminQrCodeRouteImport
+    '/_authenticated/pointage-scan': {
+      id: '/_authenticated/pointage-scan'
+      path: '/pointage-scan'
+      fullPath: '/pointage-scan'
+      preLoaderRoute: typeof AuthenticatedPointageScanRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/admin/feries': {
-      id: '/_authenticated/admin/feries'
-      path: '/admin/feries'
-      fullPath: '/admin/feries'
-      preLoaderRoute: typeof AuthenticatedAdminFeriesRouteImport
+    '/_authenticated/profil': {
+      id: '/_authenticated/profil'
+      path: '/profil'
+      fullPath: '/profil'
+      preLoaderRoute: typeof AuthenticatedProfilRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/admin/employes': {
-      id: '/_authenticated/admin/employes'
-      path: '/admin/employes'
-      fullPath: '/admin/employes'
-      preLoaderRoute: typeof AuthenticatedAdminEmployesRouteImport
+    '/_authenticated/admin/calendrier': {
+      id: '/_authenticated/admin/calendrier'
+      path: '/admin/calendrier'
+      fullPath: '/admin/calendrier'
+      preLoaderRoute: typeof AuthenticatedAdminCalendrierRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/demandes': {
@@ -298,11 +284,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminDemandesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/admin/calendrier': {
-      id: '/_authenticated/admin/calendrier'
-      path: '/admin/calendrier'
-      fullPath: '/admin/calendrier'
-      preLoaderRoute: typeof AuthenticatedAdminCalendrierRouteImport
+    '/_authenticated/admin/employes': {
+      id: '/_authenticated/admin/employes'
+      path: '/admin/employes'
+      fullPath: '/admin/employes'
+      preLoaderRoute: typeof AuthenticatedAdminEmployesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/feries': {
+      id: '/_authenticated/admin/feries'
+      path: '/admin/feries'
+      fullPath: '/admin/feries'
+      preLoaderRoute: typeof AuthenticatedAdminFeriesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/qr-code': {
+      id: '/_authenticated/admin/qr-code'
+      path: '/admin/qr-code'
+      fullPath: '/admin/qr-code'
+      preLoaderRoute: typeof AuthenticatedAdminQrCodeRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
   }

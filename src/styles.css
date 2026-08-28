@@ -128,7 +128,13 @@
   border: 1px solid color-mix(in oklch, var(--color-conge) 30%, transparent);
 }
 @utility statut-ferie {
-  background-color: color-mix(in oklch, var(--color-ferie) 15%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklch, var(--color-ferie) 15%, transparent) 0px,
+    color-mix(in oklch, var(--color-ferie) 15%, transparent) 6px,
+    color-mix(in oklch, #9CA3AF 20%, transparent) 6px,
+    color-mix(in oklch, #9CA3AF 20%, transparent) 12px
+  );
   color: var(--color-ferie);
   border: 1px solid color-mix(in oklch, var(--color-ferie) 30%, transparent);
 }
