@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { Users, AlertCircle, FileCheck, Clock, TrendingDown, Palmtree, UserX } from "lucide-react";
-import { STATUT_CLASS, STATUT_LABELS, toISODate, joursOuvresEntre, type JourFerie } from "@/lib/format";
+import { STATUT_CLASS, STATUT_LABELS, toISODate, joursOuvresEntre, formatDateFR, type JourFerie } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { displayName, initials } from "@/lib/current-user";
 
@@ -138,7 +138,7 @@ export function AdminOverview() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Présence en temps réel — {new Date().toLocaleDateString("fr-FR")}</CardTitle>
+          <CardTitle>Présence en temps réel — {formatDateFR(new Date())}</CardTitle>
           <Link to="/admin/calendrier">
             <Button variant="outline" size="sm">Vue calendrier</Button>
           </Link>

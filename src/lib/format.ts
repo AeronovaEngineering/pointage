@@ -42,9 +42,12 @@ export const PRIME_STATUT_CLASS = {
   granted: "bg-green-100 text-green-800",
 };
 
-export function formatDateFR(d: string | Date): string {
+export function formatDateFR(d: string | Date, yearFormat: "2-digit" | "numeric" = "2-digit"): string {
   const date = typeof d === "string" ? new Date(d) : d;
-  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = yearFormat === "numeric" ? String(date.getFullYear()) : String(date.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
 }
 
 export function formatTimeFR(t: string | null): string {

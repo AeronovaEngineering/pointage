@@ -91,6 +91,160 @@ function formatBilanMinutesPlain(minutes: number | null | undefined): string {
   return `${sign}${heures}h${mins.toString().padStart(2, "0")}`;
 }
 
+// ---- helper: human label for a statut code ----
+function statutLabelFor(statut: string): string {
+  if (statut === "ferie") return "Férié";
+  if (statut === "present") return "Présent";
+  if (statut === "retard") return "Retard";
+  if (statut === "absent") return "Absent";
+  if (statut === "absent_justifie") return "Absent justifié";
+  if (statut === "conge") return "Congé";
+  return statut || "—";
+}
+
+// ---- helper: build one PDF table row from a day record ----
+function buildPdfRow(r: any): any[] {
+  const bilanStr = formatBilanMinutesPlain(r.bilan_jour_minutes);
+  let bilanDisplay = bilanStr;
+  if (r.bilan_jour_minutes !== null && r.bilan_jour_minutes !== undefined) {
+    if (r.bilan_jour_minutes > 0) bilanDisplay = `+${bilanStr.replace(/^\+/, '')}`;
+    else if (r.bilan_jour_minutes < 0) bilanDisplay = bilanStr;
+    else bilanDisplay = "0";
+  }
+
+  return [
+    formatDateFR(r.date, "numeric"),
+    r.heure_pointage ?? "—",
+    r.heure_sortie ?? "—",
+    statutLabelFor(r.statut),
+    r.retard_minutes ? formatMinutesEnHeures(r.retard_minutes) : "—",
+    bilanDisplay,
+    r.taches_realisees ?? "",
+  ];
+}
+
+// ---- helper: split a list of day records into chronological month buckets ----
+function groupByMonth(days: any[]): { key: string; label: string; rows: any[] }[] {
+  const map = new Map<string, any[]>();
+  days.forEach((d: any) => {
+    const key = d.date.slice(0, 7); // "YYYY-MM"
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(d);
+  });
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, rows]) => {
+      const [y, m] = key.split("-").map(Number);
+      const rawLabel = new Date(y, m - 1, 1).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+      return { key, label: rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1), rows };
+    });
+}
+
+// ---- helper: tally summary counts/totals for a list of day records ----
+function computeSummary(days: any[]) {
+  let summaryPresent = 0, summaryRetard = 0, summaryAbsent = 0, summaryJustifie = 0, summaryConge = 0, summaryFerie = 0;
+  let totalRetardMinutes = 0, totalBilanMinutes = 0, totalTempsSup = 0;
+
+  days.forEach((r: any) => {
+    if (r.statut === "present") summaryPresent++;
+    else if (r.statut === "retard") summaryRetard++;
+    else if (r.statut === "absent") summaryAbsent++;
+    else if (r.statut === "absent_justifie") summaryJustifie++;
+    else if (r.statut === "conge") summaryConge++;
+    else if (r.statut === "ferie") summaryFerie++;
+
+    if (r.retard_minutes) totalRetardMinutes += r.retard_minutes;
+    if (r.bilan_jour_minutes !== null && r.bilan_jour_minutes !== undefined) totalBilanMinutes += r.bilan_jour_minutes;
+    if (r.temps_supplementaire) totalTempsSup += r.temps_supplementaire;
+  });
+
+  return { summaryPresent, summaryRetard, summaryAbsent, summaryJustifie, summaryConge, summaryFerie, totalRetardMinutes, totalBilanMinutes, totalTempsSup };
+}
+
+// ---- helper: render one employee's presence report into an existing jsPDF doc ----
+// One table per calendar month (so long periods stay readable), followed by a
+// dedicated summary page. The "Tâches réalisées" column is sized to fill all
+// remaining page width with symmetric left/right padding, so long task notes
+// wrap onto extra lines within the same row instead of being cut off.
+function addEmployeePresenceReport(
+  doc: jsPDF,
+  title: string,
+  subtitle: string,
+  days: any[],
+  isFirstSectionInDoc: boolean
+) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 10;
+  const marginRight = 10;
+  const fixedColsWidth = 22 + 18 + 18 + 22 + 18 + 20; // Date, Arrivée, Sortie, Statut, Retard, Bilan
+  const tachesWidth = pageWidth - marginLeft - marginRight - fixedColsWidth;
+
+  const months = groupByMonth(days);
+
+  months.forEach((month, idx) => {
+    if (!isFirstSectionInDoc || idx > 0) doc.addPage();
+
+    doc.setFontSize(16);
+    doc.text(title, pageWidth / 2, 15, { align: "center" });
+    doc.setFontSize(10);
+    doc.text(subtitle, pageWidth / 2, 22, { align: "center" });
+    doc.setFontSize(12);
+    doc.text(month.label, pageWidth / 2, 29, { align: "center" });
+
+    autoTable(doc, {
+      head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Bilan", "Tâches réalisées"]],
+      body: month.rows.map(buildPdfRow),
+      startY: 34,
+      margin: { left: marginLeft, right: marginRight },
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top" },
+      headStyles: { fillColor: [41, 128, 185], fontSize: 9, fontStyle: "bold" },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 18 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 18 },
+        5: { cellWidth: 20 },
+        6: { cellWidth: tachesWidth, overflow: "linebreak" },
+      },
+    });
+  });
+
+  // Dedicated recap page for the whole period
+  doc.addPage();
+  const s = computeSummary(days);
+
+  doc.setFontSize(16);
+  doc.text(title, pageWidth / 2, 15, { align: "center" });
+  doc.setFontSize(10);
+  doc.text(subtitle, pageWidth / 2, 22, { align: "center" });
+  doc.setFontSize(12);
+  doc.text("Résumé de la période", pageWidth / 2, 32, { align: "center" });
+
+  const summaryData = [
+    ["Présents", s.summaryPresent.toString()],
+    ["Retards", `${s.summaryRetard} (${formatMinutesEnHeures(s.totalRetardMinutes)})`],
+    ["Absents", s.summaryAbsent.toString()],
+    ["Justifiés", s.summaryJustifie.toString()],
+    ["Congés", s.summaryConge.toString()],
+    ["Fériés", s.summaryFerie.toString()],
+    ["Total bilan", formatBilanMinutesPlain(s.totalBilanMinutes)],
+    ["Temps sup.", `${s.totalTempsSup.toFixed(1)}h`],
+  ];
+
+  autoTable(doc, {
+    body: summaryData,
+    startY: 40,
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: {
+      0: { cellWidth: 40, fontStyle: 'bold' },
+      1: { cellWidth: 40 },
+    },
+    tableWidth: 80,
+    margin: { left: (pageWidth - 80) / 2 },
+  });
+}
+
 // ---- helper: export a single employee's full presence report as PDF ----
 async function exportSingleEmployeePDF(employee: any) {
   // Fetch all data needed
@@ -147,18 +301,6 @@ async function exportSingleEmployeePDF(employee: any) {
     ferieDates.add(dateStr);
   });
 
-  // Initialize summary counters
-  let summaryPresent = 0;
-  let summaryRetard = 0;
-  let summaryAbsent = 0;
-  let summaryJustifie = 0;
-  let summaryConge = 0;
-  let summaryFerie = 0;
-  let totalRetardMinutes = 0;
-  let totalBilanMinutes = 0;
-  let totalTempsSup = 0;
-  let bilanCount = 0;
-
   // Generate all working days in period
   const allDays: any[] = [];
   const current = new Date(debut);
@@ -192,21 +334,6 @@ async function exportSingleEmployeePDF(employee: any) {
         statut = "absent";
       }
 
-      // Update summary counters
-      if (statut === "present") summaryPresent++;
-      else if (statut === "retard") summaryRetard++;
-      else if (statut === "absent") summaryAbsent++;
-      else if (statut === "absent_justifie") summaryJustifie++;
-      else if (statut === "conge") summaryConge++;
-      else if (statut === "ferie") summaryFerie++;
-
-      if (retard_minutes) totalRetardMinutes += retard_minutes;
-      if (bilan_jour_minutes !== null && bilan_jour_minutes !== undefined) {
-        totalBilanMinutes += bilan_jour_minutes;
-        bilanCount++;
-      }
-      if (temps_supplementaire) totalTempsSup += temps_supplementaire;
-
       allDays.push({
         date: dateStr,
         statut,
@@ -223,87 +350,15 @@ async function exportSingleEmployeePDF(employee: any) {
   }
 
   const doc = new jsPDF("landscape", "mm", "a4");
-  const pageWidth = doc.internal.pageSize.getWidth();
   const nom = displayName(employee);
 
-  doc.setFontSize(16);
-  doc.text(`Rapport de présence — ${nom}`, pageWidth / 2, 15, { align: "center" });
-  doc.setFontSize(10);
-  doc.text(`Poste : ${employee.poste || "—"}  •  Département : ${employee.departement || "—"}`, pageWidth / 2, 22, { align: "center" });
-
-  autoTable(doc, {
-    head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Bilan", "Tâches"]],
-    body: allDays.map((r: any) => {
-      let statutLabel;
-      if (r.statut === "ferie") statutLabel = "Férié";
-      else if (r.statut === "present") statutLabel = "Présent";
-      else if (r.statut === "retard") statutLabel = "Retard";
-      else if (r.statut === "absent") statutLabel = "Absent";
-      else if (r.statut === "absent_justifie") statutLabel = "Absent justifié";
-      else if (r.statut === "conge") statutLabel = "Congé";
-      else statutLabel = r.statut || "—";
-
-      const bilanStr = formatBilanMinutesPlain(r.bilan_jour_minutes);
-      
-      // Add color indicator for bilan (just text, PDF colors not supported in autoTable easily)
-      let bilanDisplay = bilanStr;
-      if (r.bilan_jour_minutes !== null && r.bilan_jour_minutes !== undefined) {
-        if (r.bilan_jour_minutes > 0) bilanDisplay = `+${bilanStr.replace(/^\+/, '')}`;
-        else if (r.bilan_jour_minutes < 0) bilanDisplay = bilanStr;
-        else bilanDisplay = "0";
-      }
-
-      return [
-        formatDateFR(r.date),
-        r.heure_pointage ?? "—",
-        r.heure_sortie ?? "—",
-        statutLabel,
-        r.retard_minutes ? formatMinutesEnHeures(r.retard_minutes) : "—",
-        bilanDisplay,
-        r.taches_realisees ?? "",
-      ];
-    }),
-    startY: 30,
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [41, 128, 185], fontSize: 9, fontStyle: "bold" },
-    columnStyles: {
-      0: { cellWidth: 25 }, // Date
-      1: { cellWidth: 20 }, // Arrivée
-      2: { cellWidth: 20 }, // Sortie
-      3: { cellWidth: 25 }, // Statut
-      4: { cellWidth: 20 }, // Retard
-      5: { cellWidth: 22 }, // Bilan
-      6: { cellWidth: 'wrap' }, // Tâches - wrap text
-    },
-  });
-
-  // Add summary section
-  const finalY = (doc as any).lastAutoTable.finalY + 8;
-  doc.setFontSize(11);
-  doc.text("Résumé de la période", pageWidth / 2, finalY, { align: "center" });
-  
-  const summaryData = [
-    ["Présents", summaryPresent.toString()],
-    ["Retards", `${summaryRetard} (${formatMinutesEnHeures(totalRetardMinutes)})`],
-    ["Absents", summaryAbsent.toString()],
-    ["Justifiés", summaryJustifie.toString()],
-    ["Congés", summaryConge.toString()],
-    ["Fériés", summaryFerie.toString()],
-    ["Total bilan", formatBilanMinutesPlain(totalBilanMinutes)],
-    ["Temps sup.", `${totalTempsSup.toFixed(1)}h`],
-  ];
-
-  autoTable(doc, {
-    body: summaryData,
-    startY: finalY + 5,
-    styles: { fontSize: 9, cellPadding: 3 },
-    columnStyles: {
-      0: { cellWidth: 40, fontStyle: 'bold' },
-      1: { cellWidth: 40 },
-    },
-    tableWidth: 80,
-    margin: { left: (pageWidth - 80) / 2 },
-  });
+  addEmployeePresenceReport(
+    doc,
+    `Rapport de présence — ${nom}`,
+    `Poste : ${employee.poste || "—"}  •  Département : ${employee.departement || "—"}`,
+    allDays,
+    true
+  );
 
   doc.save(`fiche_${nom.replace(/\s+/g, "_")}.pdf`);
   toast.success("Rapport PDF téléchargé");
@@ -773,7 +828,7 @@ function FicheEmploye({
             </div>
             <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
               {!employee.actif && <Badge variant="destructive" className="col-span-2 justify-center sm:col-span-1">Inactif</Badge>}
-              <EditerDialog emp={employee} onDone={onRefresh} />
+              <EditerDialog key={employee.id} emp={employee} onDone={onRefresh} />
               <Button size="sm" variant="outline" onClick={() => onToggleActif(employee.id, employee.actif)}>
                 {employee.actif ? <UserX className="w-4 h-4 mr-2" /> : <UserCheck className="w-4 h-4 mr-2" />}
                 {employee.actif ? "Désactiver" : "Activer"}
@@ -1646,9 +1701,8 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
 
     const profMap = new Map(employees.map((e) => [e.id, `${e.prenom ?? ""} ${e.nom ?? ""}`.trim() || e.email]));
     const doc = new jsPDF("landscape", "mm", "a4");
-    const pageWidth = doc.internal.pageSize.getWidth();
 
-    const dateRange = [];
+    const dateRange: string[] = [];
     let startDate = new Date(debut || "2024-01-01");
     let endDate = new Date(fin || new Date());
     
@@ -1661,33 +1715,19 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
       current.setDate(current.getDate() + 1);
     }
 
-    const period = `${debut || "début"} au ${fin || "aujourd'hui"}`;
+    const period = `${debut ? formatDateFR(debut, "numeric") : "début"} au ${fin ? formatDateFR(fin, "numeric") : "aujourd'hui"}`;
     let first = true;
 
     const userIds = empId !== "tous" ? [empId] : employees.map(e => e.id);
-    
-    for (const uid of userIds) {
-      if (!first) doc.addPage();
-      first = false;
 
+    for (const uid of userIds) {
       const userConges = congeDatesByUser.get(uid) || new Set();
-      
-      // Initialize summary counters for this employee
-      let summaryPresent = 0;
-      let summaryRetard = 0;
-      let summaryAbsent = 0;
-      let summaryJustifie = 0;
-      let summaryConge = 0;
-      let summaryFerie = 0;
-      let totalRetardMinutes = 0;
-      let totalBilanMinutes = 0;
-      let totalTempsSup = 0;
-      
-      // Build rows for this employee
-      const rows = dateRange.map(dateStr => {
+
+      // Build day records for this employee
+      const days = dateRange.map((dateStr) => {
         const key = `${uid}|${dateStr}`;
         const pointage = pointagesByUserDate.get(key);
-        
+
         let statut = "absent";
         let heure_pointage = null;
         let heure_sortie = null;
@@ -1712,97 +1752,17 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
           statut = "absent";
         }
 
-        // Update summary counters
-        if (statut === "present") summaryPresent++;
-        else if (statut === "retard") summaryRetard++;
-        else if (statut === "absent") summaryAbsent++;
-        else if (statut === "absent_justifie") summaryJustifie++;
-        else if (statut === "conge") summaryConge++;
-        else if (statut === "ferie") summaryFerie++;
-
-        if (retard_minutes) totalRetardMinutes += retard_minutes;
-        if (bilan_jour_minutes !== null && bilan_jour_minutes !== undefined) {
-          totalBilanMinutes += bilan_jour_minutes;
-        }
-        if (temps_supplementaire) totalTempsSup += temps_supplementaire;
-
-        let statutLabel;
-        if (statut === "ferie") statutLabel = "Férié";
-        else if (statut === "present") statutLabel = "Présent";
-        else if (statut === "retard") statutLabel = "Retard";
-        else if (statut === "absent") statutLabel = "Absent";
-        else if (statut === "absent_justifie") statutLabel = "Absent justifié";
-        else if (statut === "conge") statutLabel = "Congé";
-        else statutLabel = statut || "—";
-
-        const bilanStr = formatBilanMinutesPlain(bilan_jour_minutes);
-        let bilanDisplay = bilanStr;
-        if (bilan_jour_minutes !== null && bilan_jour_minutes !== undefined) {
-          if (bilan_jour_minutes > 0) bilanDisplay = `+${bilanStr.replace(/^\+/, '')}`;
-          else if (bilan_jour_minutes < 0) bilanDisplay = bilanStr;
-          else bilanDisplay = "0";
-        }
-
-        return [
-          formatDateFR(dateStr),
-          heure_pointage ?? "—",
-          heure_sortie ?? "—",
-          statutLabel,
-          retard_minutes ? formatMinutesEnHeures(retard_minutes) : "—",
-          bilanDisplay,
-          taches_realisees ?? "",
-        ];
+        return { date: dateStr, statut, heure_pointage, heure_sortie, retard_minutes, taches_realisees, bilan_jour_minutes, temps_supplementaire };
       });
 
-      doc.setFontSize(16);
-      doc.text(`Rapport de présence — ${profMap.get(uid) ?? uid}`, pageWidth / 2, 15, { align: "center" });
-      doc.setFontSize(10);
-      doc.text(`Période : ${period}`, pageWidth / 2, 22, { align: "center" });
-
-      autoTable(doc, {
-        head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Bilan", "Tâches"]],
-        body: rows,
-        startY: 30,
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [41, 128, 185], fontSize: 9, fontStyle: "bold" },
-        columnStyles: {
-          0: { cellWidth: 25 },
-          1: { cellWidth: 20 },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 20 },
-          5: { cellWidth: 22 },
-          6: { cellWidth: 'wrap' },
-        },
-      });
-
-      // Add summary section
-      const finalY = (doc as any).lastAutoTable.finalY + 8;
-      doc.setFontSize(11);
-      doc.text("Résumé de la période", pageWidth / 2, finalY, { align: "center" });
-      
-      const summaryData = [
-        ["Présents", summaryPresent.toString()],
-        ["Retards", `${summaryRetard} (${formatMinutesEnHeures(totalRetardMinutes)})`],
-        ["Absents", summaryAbsent.toString()],
-        ["Justifiés", summaryJustifie.toString()],
-        ["Congés", summaryConge.toString()],
-        ["Fériés", summaryFerie.toString()],
-        ["Total bilan", formatBilanMinutesPlain(totalBilanMinutes)],
-        ["Temps sup.", `${totalTempsSup.toFixed(1)}h`],
-      ];
-
-      autoTable(doc, {
-        body: summaryData,
-        startY: finalY + 5,
-        styles: { fontSize: 9, cellPadding: 3 },
-        columnStyles: {
-          0: { cellWidth: 40, fontStyle: 'bold' },
-          1: { cellWidth: 40 },
-        },
-        tableWidth: 80,
-        margin: { left: (pageWidth - 80) / 2 },
-      });
+      addEmployeePresenceReport(
+        doc,
+        `Rapport de présence — ${profMap.get(uid) ?? uid}`,
+        `Période : ${period}`,
+        days,
+        first
+      );
+      first = false;
     }
 
     doc.save(`presence_${debut || "all"}_${fin || "all"}${empId !== "tous" ? "_" + (profMap.get(empId) ?? "") : ""}.pdf`);
