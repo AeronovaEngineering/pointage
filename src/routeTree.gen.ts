@@ -16,9 +16,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedProfilRouteImport } from './routes/_authenticated/profil'
 import { Route as AuthenticatedPointageScanRouteImport } from './routes/_authenticated/pointage-scan'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedMesFichesPaieRouteImport } from './routes/_authenticated/mes-fiches-paie'
 import { Route as AuthenticatedMesDemandesRouteImport } from './routes/_authenticated/mes-demandes'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAdminQrCodeRouteImport } from './routes/_authenticated/admin.qr-code'
+import { Route as AuthenticatedAdminFichesPaieRouteImport } from './routes/_authenticated/admin.fiches-paie'
 import { Route as AuthenticatedAdminFeriesRouteImport } from './routes/_authenticated/admin.feries'
 import { Route as AuthenticatedAdminEmployesRouteImport } from './routes/_authenticated/admin.employes'
 import { Route as AuthenticatedAdminDemandesRouteImport } from './routes/_authenticated/admin.demandes'
@@ -60,6 +62,12 @@ const AuthenticatedNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedMesFichesPaieRoute =
+  AuthenticatedMesFichesPaieRouteImport.update({
+    id: '/mes-fiches-paie',
+    path: '/mes-fiches-paie',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedMesDemandesRoute =
   AuthenticatedMesDemandesRouteImport.update({
     id: '/mes-demandes',
@@ -75,6 +83,12 @@ const AuthenticatedAdminQrCodeRoute =
   AuthenticatedAdminQrCodeRouteImport.update({
     id: '/admin/qr-code',
     path: '/admin/qr-code',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAdminFichesPaieRoute =
+  AuthenticatedAdminFichesPaieRouteImport.update({
+    id: '/admin/fiches-paie',
+    path: '/admin/fiches-paie',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminFeriesRoute =
@@ -108,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/mes-demandes': typeof AuthenticatedMesDemandesRoute
+  '/mes-fiches-paie': typeof AuthenticatedMesFichesPaieRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/pointage-scan': typeof AuthenticatedPointageScanRoute
   '/profil': typeof AuthenticatedProfilRoute
@@ -115,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/admin/demandes': typeof AuthenticatedAdminDemandesRoute
   '/admin/employes': typeof AuthenticatedAdminEmployesRoute
   '/admin/feries': typeof AuthenticatedAdminFeriesRoute
+  '/admin/fiches-paie': typeof AuthenticatedAdminFichesPaieRoute
   '/admin/qr-code': typeof AuthenticatedAdminQrCodeRoute
 }
 export interface FileRoutesByTo {
@@ -123,6 +139,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/mes-demandes': typeof AuthenticatedMesDemandesRoute
+  '/mes-fiches-paie': typeof AuthenticatedMesFichesPaieRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/pointage-scan': typeof AuthenticatedPointageScanRoute
   '/profil': typeof AuthenticatedProfilRoute
@@ -130,6 +147,7 @@ export interface FileRoutesByTo {
   '/admin/demandes': typeof AuthenticatedAdminDemandesRoute
   '/admin/employes': typeof AuthenticatedAdminEmployesRoute
   '/admin/feries': typeof AuthenticatedAdminFeriesRoute
+  '/admin/fiches-paie': typeof AuthenticatedAdminFichesPaieRoute
   '/admin/qr-code': typeof AuthenticatedAdminQrCodeRoute
 }
 export interface FileRoutesById {
@@ -140,6 +158,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/mes-demandes': typeof AuthenticatedMesDemandesRoute
+  '/_authenticated/mes-fiches-paie': typeof AuthenticatedMesFichesPaieRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/pointage-scan': typeof AuthenticatedPointageScanRoute
   '/_authenticated/profil': typeof AuthenticatedProfilRoute
@@ -147,6 +166,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/demandes': typeof AuthenticatedAdminDemandesRoute
   '/_authenticated/admin/employes': typeof AuthenticatedAdminEmployesRoute
   '/_authenticated/admin/feries': typeof AuthenticatedAdminFeriesRoute
+  '/_authenticated/admin/fiches-paie': typeof AuthenticatedAdminFichesPaieRoute
   '/_authenticated/admin/qr-code': typeof AuthenticatedAdminQrCodeRoute
 }
 export interface FileRouteTypes {
@@ -157,6 +177,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/dashboard'
     | '/mes-demandes'
+    | '/mes-fiches-paie'
     | '/notifications'
     | '/pointage-scan'
     | '/profil'
@@ -164,6 +185,7 @@ export interface FileRouteTypes {
     | '/admin/demandes'
     | '/admin/employes'
     | '/admin/feries'
+    | '/admin/fiches-paie'
     | '/admin/qr-code'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -172,6 +194,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/dashboard'
     | '/mes-demandes'
+    | '/mes-fiches-paie'
     | '/notifications'
     | '/pointage-scan'
     | '/profil'
@@ -179,6 +202,7 @@ export interface FileRouteTypes {
     | '/admin/demandes'
     | '/admin/employes'
     | '/admin/feries'
+    | '/admin/fiches-paie'
     | '/admin/qr-code'
   id:
     | '__root__'
@@ -188,6 +212,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/_authenticated/dashboard'
     | '/_authenticated/mes-demandes'
+    | '/_authenticated/mes-fiches-paie'
     | '/_authenticated/notifications'
     | '/_authenticated/pointage-scan'
     | '/_authenticated/profil'
@@ -195,6 +220,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/demandes'
     | '/_authenticated/admin/employes'
     | '/_authenticated/admin/feries'
+    | '/_authenticated/admin/fiches-paie'
     | '/_authenticated/admin/qr-code'
   fileRoutesById: FileRoutesById
 }
@@ -256,6 +282,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/mes-fiches-paie': {
+      id: '/_authenticated/mes-fiches-paie'
+      path: '/mes-fiches-paie'
+      fullPath: '/mes-fiches-paie'
+      preLoaderRoute: typeof AuthenticatedMesFichesPaieRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/mes-demandes': {
       id: '/_authenticated/mes-demandes'
       path: '/mes-demandes'
@@ -275,6 +308,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/qr-code'
       fullPath: '/admin/qr-code'
       preLoaderRoute: typeof AuthenticatedAdminQrCodeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/fiches-paie': {
+      id: '/_authenticated/admin/fiches-paie'
+      path: '/admin/fiches-paie'
+      fullPath: '/admin/fiches-paie'
+      preLoaderRoute: typeof AuthenticatedAdminFichesPaieRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/feries': {
@@ -311,6 +351,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedMesDemandesRoute: typeof AuthenticatedMesDemandesRoute
+  AuthenticatedMesFichesPaieRoute: typeof AuthenticatedMesFichesPaieRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedPointageScanRoute: typeof AuthenticatedPointageScanRoute
   AuthenticatedProfilRoute: typeof AuthenticatedProfilRoute
@@ -318,12 +359,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminDemandesRoute: typeof AuthenticatedAdminDemandesRoute
   AuthenticatedAdminEmployesRoute: typeof AuthenticatedAdminEmployesRoute
   AuthenticatedAdminFeriesRoute: typeof AuthenticatedAdminFeriesRoute
+  AuthenticatedAdminFichesPaieRoute: typeof AuthenticatedAdminFichesPaieRoute
   AuthenticatedAdminQrCodeRoute: typeof AuthenticatedAdminQrCodeRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedMesDemandesRoute: AuthenticatedMesDemandesRoute,
+  AuthenticatedMesFichesPaieRoute: AuthenticatedMesFichesPaieRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedPointageScanRoute: AuthenticatedPointageScanRoute,
   AuthenticatedProfilRoute: AuthenticatedProfilRoute,
@@ -331,6 +374,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminDemandesRoute: AuthenticatedAdminDemandesRoute,
   AuthenticatedAdminEmployesRoute: AuthenticatedAdminEmployesRoute,
   AuthenticatedAdminFeriesRoute: AuthenticatedAdminFeriesRoute,
+  AuthenticatedAdminFichesPaieRoute: AuthenticatedAdminFichesPaieRoute,
   AuthenticatedAdminQrCodeRoute: AuthenticatedAdminQrCodeRoute,
 }
 

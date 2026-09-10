@@ -10,7 +10,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Clock, LayoutDashboard, Calendar, Users, FileCheck, LogOut, User, CalendarDays, Bell, QrCode } from "lucide-react";
+import { Clock, LayoutDashboard, Calendar, Users, FileCheck, LogOut, User, CalendarDays, Bell, QrCode, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -55,6 +55,7 @@ function AuthenticatedLayout() {
   const empNav = [
     { to: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
     { to: "/mes-demandes", label: "Mes demandes", icon: FileCheck },
+    { to: "/mes-fiches-paie", label: "Mes fiches de paie", icon: Wallet },
     { to: "/profil", label: "Profil", icon: User },
   ];
   const adminNav = [
@@ -62,6 +63,7 @@ function AuthenticatedLayout() {
     { to: "/admin/calendrier", label: "Calendrier", icon: Calendar },
     { to: "/admin/employes", label: "Employés", icon: Users },
     { to: "/admin/demandes", label: "Demandes", icon: FileCheck },
+    { to: "/admin/fiches-paie", label: "Fiches de paie", icon: Wallet },
     { to: "/admin/feries", label: "Jours fériés", icon: CalendarDays },
     { to: "/admin/qr-code", label: "QR Pointage", icon: QrCode },
     { to: "/profil", label: "Profil", icon: User },
