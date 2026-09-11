@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FichePaie, moisLabel } from "@/lib/fiche-paie";
-import { formatDateFR, formatMinutesEnHeures } from "@/lib/format";
+import { formatMinutesEnHeures } from "@/lib/format";
 
 interface EmployeeInfo {
   nom?: string | null;
@@ -9,237 +9,272 @@ interface EmployeeInfo {
   poste?: string | null;
   departement?: string | null;
   cni?: string | null;
-  num_secu?: string | null;
+  num_secu?: string | null; // N° CNSS
   date_embauche?: string | null;
 }
 
+interface CompanyInfo {
+  name?: string;
+  logoDataUrl?: string;
+}
+
 const DT = (n: number) => `${n.toFixed(2)} DT`;
+const NUM = (n: number) => n.toLocaleString("fr-FR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
 // Brand palette — black & gold, no blue anywhere.
 const BLACK: [number, number, number] = [23, 23, 23];
 const GOLD: [number, number, number] = [176, 137, 62];
-const GOLD_LIGHT: [number, number, number] = [242, 233, 214];
+const GOLD_LIGHT: [number, number, number] = [232, 219, 189];
+const GOLD_FAINT: [number, number, number] = [248, 244, 236];
 const GRAY: [number, number, number] = [120, 120, 120];
-const WHITE: [number, number, number] = [255, 255, 255];
+const INK: [number, number, number] = [40, 40, 40];
 
-const COMPANY_NAME = "AERONOVA ENGINEERING";
-const COMPANY_SUBTITLE = "Ressources Humaines & Administration";
-const LOGO_URL = "/logo.png";
-
-function loadLogo(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
+// Hardcoded company identity — to be wired into CompanyInfo later.
+const COMPANY = {
+  name: "AERONOVA ENGINEERING",
+  adresse: "N°47 Rue Fathi Zouhir Cité Nkhilette 2083 Raoued Ariana-Tunisie",
+  mf: "1919265 L/A/M/000",
+  cnssEmployeur: "696028 - 53",
+};
 
 function sectionTitle(doc: jsPDF, label: string, x: number, y: number, width: number) {
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
+  doc.setFontSize(10.5);
   doc.setTextColor(...BLACK);
   doc.text(label.toUpperCase(), x, y);
   doc.setDrawColor(...GOLD);
   doc.setLineWidth(0.6);
-  doc.line(x, y + 1.6, x + width, y + 1.6);
+  doc.line(x, y + 2, x + width, y + 2);
 }
 
-function field(doc: jsPDF, label: string, value: string, x: number, y: number) {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.setTextColor(...BLACK);
-  const labelText = `${label} : `;
-  doc.text(labelText, x, y);
-  const labelWidth = doc.getTextWidth(labelText);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(40, 40, 40);
-  doc.text(value || "—", x + labelWidth, y);
+/**
+ * Resolve the "Nombre" column for a given rubrique based on its label.
+ * Returns undefined when the rubrique has no meaningful count.
+ */
+function resolveNombre(label: string, fiche: FichePaie): number | undefined {
+  const l = label.toLowerCase();
+
+  if (l.includes("absence")) return fiche.jours_absence;
+  if (l.includes("supplémentaire") || l.includes("heure sup") || l.includes("heures sup"))
+    return fiche.heures_supplementaires;
+  if (l.includes("férié") || l.includes("majoré")) return fiche.jours_feries_travailles;
+  if (l.includes("présence") || l.includes("travaillé") || l.includes("base")) return fiche.jours_travailles;
+
+  return undefined;
 }
 
-export async function buildFichePaiePDF(
+export function buildFichePaiePDF(
   fiche: FichePaie,
   employee: EmployeeInfo,
-  companyName: string = COMPANY_NAME
-): Promise<jsPDF> {
-  // A5 — a full payslip's content is short enough that A4 leaves the sheet
-  // half empty; A5 prints as a compact, professional half-page document.
-  const doc = new jsPDF("portrait", "mm", "a5");
+  company: CompanyInfo = {}
+): jsPDF {
+  const { name = COMPANY.name, logoDataUrl } = company;
+
+  const doc = new jsPDF("portrait", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginLeft = 10;
-  const marginRight = 10;
+  const marginLeft = 20;
+  const marginRight = 20;
   const contentWidth = pageWidth - marginLeft - marginRight;
 
-  // ---- Header: company identity (left) + logo (top right) ----
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(...BLACK);
-  doc.text(companyName, marginLeft, 13);
+  // ---- Header: logo top-left, company identity next to it ----
+  const logoSize = 24;
+  const textX = logoDataUrl ? marginLeft + logoSize + 6 : marginLeft;
 
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...GRAY);
-  doc.text(COMPANY_SUBTITLE, marginLeft, 17.5);
-
-  const logo = await loadLogo(LOGO_URL);
-  if (logo && logo.width && logo.height) {
-    const maxW = 20;
-    const maxH = 14;
-    const ratio = Math.min(maxW / logo.width, maxH / logo.height);
-    const w = logo.width * ratio;
-    const h = logo.height * ratio;
-    doc.addImage(logo, "PNG", pageWidth - marginRight - w, 6, w, h);
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, "PNG", marginLeft, 14, logoSize, logoSize);
   }
 
-  // ---- Title ----
+  doc.setTextColor(...BLACK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.setTextColor(...BLACK);
-  doc.text("BULLETIN DE PAIE", pageWidth / 2, 27, { align: "center" });
+  doc.text(name, textX, 21);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...GRAY);
-  const statutLabel = fiche.statut === "validee" ? "Validée" : "Brouillon";
-  const dateLabel = fiche.valide_at ? `Validée le ${formatDateFR(fiche.valide_at)}` : statutLabel;
-  doc.text(`Période : ${moisLabel(fiche.mois)}  —  ${dateLabel}`, pageWidth / 2, 32.5, { align: "center" });
+  doc.text(COMPANY.adresse, textX, 26.5, { maxWidth: contentWidth - (textX - marginLeft) });
+  doc.text(`MF : ${COMPANY.mf}`, textX, 31);
+  doc.text(`CNSS Employeur : ${COMPANY.cnssEmployeur}`, textX, 35.5);
 
   doc.setDrawColor(...GOLD);
-  doc.setLineWidth(0.8);
-  doc.line(marginLeft, 36, pageWidth - marginRight, 36);
+  doc.setLineWidth(0.7);
+  doc.line(marginLeft, 41, pageWidth - marginRight, 41);
 
-  // ---- Section 1: Informations générales ----
-  let y = 43;
-  sectionTitle(doc, "1. Informations générales", marginLeft, y, contentWidth);
-  y += 6;
+  // ---- Document title ----
+  doc.setTextColor(...BLACK);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("BULLETIN DE PAIE", pageWidth / 2, 51, { align: "center" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...GOLD);
+  doc.text(moisLabel(fiche.mois), pageWidth / 2, 57.5, { align: "center" });
+
+  // ---- 1. Informations employé ----
+  let y = 69;
+  sectionTitle(doc, "Informations employé", marginLeft, y, contentWidth);
+  y += 5;
 
   const nomComplet = [employee.prenom, employee.nom].filter(Boolean).join(" ") || "—";
-  const colGap = contentWidth / 2;
-  field(doc, "Nom et prénom", nomComplet, marginLeft, y);
-  field(doc, "N° CIN", employee.cni || "—", marginLeft + colGap, y);
-  y += 5.5;
-  field(doc, "Poste", employee.poste || "—", marginLeft, y);
-  field(doc, "Date d'embauche", employee.date_embauche ? formatDateFR(employee.date_embauche) : "—", marginLeft + colGap, y);
-  y += 8;
 
-  // ---- Section 2: Période & présence ----
-  sectionTitle(doc, "2. Période & présence", marginLeft, y, contentWidth);
+  autoTable(doc, {
+    startY: y,
+    head: [["CIN", "Nom & Prénom", "N° CNSS", "Poste", "Département"]],
+    body: [[
+      employee.cni || "—",
+      nomComplet,
+      employee.num_secu || "—",
+      employee.poste || "—",
+      employee.departement || "—",
+    ]],
+    theme: "grid",
+    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8.5, fontStyle: "bold", halign: "center" },
+    bodyStyles: { fontSize: 9.5, halign: "center", textColor: INK },
+    alternateRowStyles: { fillColor: GOLD_FAINT },
+    styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15, cellPadding: 3 },
+    margin: { left: marginLeft, right: marginRight },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 9;
+
+  // ---- 2. Congés ----
+  sectionTitle(doc, "Congés", marginLeft, y, contentWidth);
   y += 3;
 
   autoTable(doc, {
     startY: y,
-    head: [["Jours travaillés", "Absences", "Congés", "Retards cumulés", "Heures sup."]],
+    head: [["Droit congé annuel", "Solde disponible", "Congés pris ce mois"]],
+    body: [[
+      `${fiche.droit_conge} jours`,
+      `${fiche.solde_conge} jours`,
+      `${fiche.jours_conge} jours`,
+    ]],
+    theme: "grid",
+    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8.5, fontStyle: "bold", halign: "center" },
+    bodyStyles: { fontSize: 10, halign: "center", textColor: INK },
+    styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15, cellPadding: 3 },
+    margin: { left: marginLeft, right: marginRight },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 9;
+
+  // ---- 3. Présence ----
+  sectionTitle(doc, "Présence", marginLeft, y, contentWidth);
+  y += 3;
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Jours travaillés", "Absences", "Retards", "Heures sup. brutes", "Heures sup. payées"]],
     body: [[
       String(fiche.jours_travailles),
       String(fiche.jours_absence),
-      String(fiche.jours_conge),
       formatMinutesEnHeures(fiche.retard_minutes),
-      `${fiche.heures_supplementaires.toFixed(1)}h`,
+      `${fiche.heures_supplementaires_brutes.toFixed(2)}h`,
+      `${fiche.heures_supplementaires.toFixed(2)}h`,
     ]],
-    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 7, fontStyle: "bold", halign: "center" },
-    bodyStyles: { fontSize: 8, halign: "center", textColor: [30, 30, 30] },
+    theme: "grid",
+    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 7.5, fontStyle: "bold", halign: "center" },
+    bodyStyles: { fontSize: 9.5, halign: "center", textColor: INK },
+    styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15, cellPadding: 2.5 },
     margin: { left: marginLeft, right: marginRight },
-    tableLineColor: GOLD_LIGHT,
-    tableLineWidth: 0.1,
   });
 
-  y = (doc as any).lastAutoTable.finalY + 6;
+  y = (doc as any).lastAutoTable.finalY + 9;
 
-  // ---- Section 3: Détail de la rémunération ----
-  sectionTitle(doc, "3. Détail de la rémunération", marginLeft, y, contentWidth);
+  // ---- 4. Détails paie ----
+  sectionTitle(doc, "Détails paie", marginLeft, y, contentWidth);
   y += 3;
 
-  const rows = fiche.details.map((d) => [d.label, d.type === "deduction" ? "Déduction" : "Gain", DT(d.montant)]);
+  const rows = fiche.details.map((d) => {
+    const isDeduction = d.type === "deduction" || d.montant < 0;
+    const montant = Math.abs(d.montant);
+
+    const nombre = resolveNombre(d.label, fiche);
+    const isBase = /base/i.test(d.label); // Salaire de base → no Taux
+    const taux = !isBase ? (nombre && nombre > 0 ? montant / nombre : montant) : undefined;
+
+    return [
+      d.label,
+      nombre !== undefined ? (nombre % 1 === 0 ? String(nombre) : nombre.toFixed(2)) : "",
+      taux !== undefined ? NUM(taux) : "",
+      isDeduction ? "" : DT(montant),
+      isDeduction ? DT(montant) : "",
+    ];
+  });
 
   autoTable(doc, {
     startY: y,
-    head: [["Élément", "Type", "Montant"]],
+    head: [["Rubrique", "Nombre", "Taux", "Gain (DT)", "Retenue (DT)"]],
     body: rows,
-    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8, fontStyle: "bold" },
-    styles: { fontSize: 8, cellPadding: 1.8, textColor: [30, 30, 30] },
+    theme: "grid",
+    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8.5, fontStyle: "bold", halign: "center" },
+    styles: { fontSize: 9.5, cellPadding: 2.8, lineColor: GOLD_LIGHT, lineWidth: 0.15, textColor: INK },
     columnStyles: {
-      0: { cellWidth: contentWidth - 55 },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 27, halign: "right" },
+      0: { cellWidth: contentWidth - 100 },
+      1: { cellWidth: 20, halign: "center" },
+      2: { cellWidth: 20, halign: "right" },
+      3: { cellWidth: 30, halign: "right" },
+      4: { cellWidth: 30, halign: "right" },
     },
     margin: { left: marginLeft, right: marginRight },
-    tableLineColor: GOLD_LIGHT,
-    tableLineWidth: 0.1,
     didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 2) {
-        const raw = fiche.details[data.row.index]?.montant ?? 0;
-        if (raw < 0) data.cell.styles.textColor = [150, 40, 40];
+      if (data.section === "body" && data.column.index === 4 && data.cell.text[0]) {
+        data.cell.styles.textColor = [150, 40, 40];
       }
     },
   });
 
-  y = (doc as any).lastAutoTable.finalY + 4;
+  y = (doc as any).lastAutoTable.finalY + 6;
 
   // ---- Net à payer banner ----
-  const bannerH = 10;
+  const bannerH = 12;
   doc.setFillColor(...BLACK);
   doc.rect(marginLeft, y, contentWidth, bannerH, "F");
   doc.setDrawColor(...GOLD);
   doc.setLineWidth(0.5);
   doc.rect(marginLeft, y, contentWidth, bannerH, "S");
   doc.setTextColor(...GOLD);
-  doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.text("NET À PAYER", marginLeft + 4, y + bannerH / 2 + 1.2);
-  doc.text(DT(fiche.net_a_payer), pageWidth - marginRight - 4, y + bannerH / 2 + 1.2, { align: "right" });
-  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(12);
+  doc.text("NET À PAYER", marginLeft + 5, y + bannerH / 2 + 1.4);
+  doc.text(DT(fiche.net_a_payer), pageWidth - marginRight - 5, y + bannerH / 2 + 1.4, { align: "right" });
+  doc.setTextColor(...BLACK);
 
-  y += bannerH + 5;
+  y += bannerH + 8;
 
   if (fiche.commentaire_admin) {
     doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.5);
+    doc.setFontSize(9);
     doc.setTextColor(...GRAY);
     doc.text(`Note : ${fiche.commentaire_admin}`, marginLeft, y, { maxWidth: contentWidth });
-    y += 8;
+    y += 10;
   }
 
-  // ---- Signatures ----
-  const sigY = Math.max(y + 6, pageHeight - 28);
-  const sigBoxW = (contentWidth - 10) / 2;
+  // ---- Signatures — plain (not bold), capped so a blank area for the
+  // stamp/signature always remains below, never crowding the page edge.
+  const idealSigY = pageHeight - 55; // where it sits by default on a normal-length slip
+  const maxSigY = pageHeight - 42;   // hard cap: content never pushes it past this
+  const sigY = Math.min(Math.max(y + 12, idealSigY), maxSigY);
+  const colWidth = contentWidth / 2;
 
-  doc.setDrawColor(...GOLD);
-  doc.setLineWidth(0.3);
-  doc.line(marginLeft, sigY, marginLeft + sigBoxW, sigY);
-  doc.line(marginLeft + sigBoxW + 10, sigY, marginLeft + sigBoxW + 10 + sigBoxW, sigY);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...BLACK);
-  doc.text("Signature — Responsable RH", marginLeft, sigY + 4);
-  doc.text("Signature — Gérant", marginLeft + sigBoxW + 10, sigY + 4);
-
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(6.5);
-  doc.setTextColor(...GRAY);
-  doc.text("(si document imprimé)", marginLeft, sigY + 7.5);
-  doc.text("(si document imprimé)", marginLeft + sigBoxW + 10, sigY + 7.5);
-
-  // ---- Footer ----
-  doc.setDrawColor(...GOLD);
-  doc.setLineWidth(0.3);
-  doc.line(marginLeft, pageHeight - 12, pageWidth - marginRight, pageHeight - 12);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.3);
-  doc.setTextColor(...GRAY);
-  doc.text(
-    "Document généré automatiquement — à conserver pour vos démarches administratives.",
-    pageWidth / 2,
-    pageHeight - 8,
-    { align: "center" }
-  );
+  doc.setFontSize(9.5);
+  doc.setTextColor(...INK);
+  doc.text("Signature et cachet de l'entreprise", marginLeft, sigY);
+  doc.text("Signature employé", marginLeft + colWidth, sigY);
+
+  doc.setDrawColor(...GOLD_LIGHT);
+  doc.setLineWidth(0.2);
+  doc.line(marginLeft, sigY + 22, marginLeft + colWidth - 12, sigY + 22);
+  doc.line(marginLeft + colWidth, sigY + 22, pageWidth - marginRight, sigY + 22);
 
   return doc;
 }
 
-export async function downloadFichePaiePDF(fiche: FichePaie, employee: EmployeeInfo, companyName?: string) {
-  const doc = await buildFichePaiePDF(fiche, employee, companyName);
+export function downloadFichePaiePDF(fiche: FichePaie, employee: EmployeeInfo, company?: CompanyInfo) {
+  const doc = buildFichePaiePDF(fiche, employee, company);
   const nomComplet = [employee.prenom, employee.nom].filter(Boolean).join("_") || "employe";
   doc.save(`fiche-paie_${nomComplet}_${fiche.mois.slice(0, 7)}.pdf`);
 }

@@ -19,11 +19,15 @@ export interface FichePaie {
   jours_absence_justifiee: number;
   jours_conge: number;
   jours_ouvres_mois: number;
+  jours_feries_travailles: number;
   retard_minutes: number;
   heures_supplementaires: number;
+  heures_supplementaires_brutes: number;
   montant_primes: number;
   montant_deductions: number;
   net_a_payer: number;
+  solde_conge: number;
+  droit_conge: number;
   details: FichePaieDetailLine[];
   commentaire_admin: string | null;
   genere_par: string | null;
