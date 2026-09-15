@@ -55,7 +55,7 @@ export function AdminOverview() {
       const { data: conges } = await supabase
         .from("demandes")
         .select("user_id,type")
-        .in("type", ["conge_annuel", "sortie_anticipee", "absence_exceptionnelle", "avance"])
+        .in("type", ["conge_annuel"])
         .eq("statut", "approuve")
         .lte("date_debut", today)
         .gte("date_fin", today);
