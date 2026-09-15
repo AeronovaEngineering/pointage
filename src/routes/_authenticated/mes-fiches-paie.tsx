@@ -66,6 +66,10 @@ function MesFichesPaie() {
                       cni: user.cni,
                       num_secu: user.num_secu,
                       date_embauche: user.date_embauche,
+                      type_contrat: user.type_contrat,
+                      situation_familiale: (user as any).situation_familiale,
+                      nombre_enfants: (user as any).nombre_enfants,
+                      mode_paiement: f.mode_paiement,
                     })
                   }
                 >

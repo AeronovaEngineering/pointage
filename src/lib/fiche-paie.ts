@@ -28,6 +28,9 @@ export interface FichePaie {
   net_a_payer: number;
   solde_conge: number;
   droit_conge: number;
+  taux_journalier: number;
+  taux_horaire_sup: number;
+  mode_paiement: string | null;
   details: FichePaieDetailLine[];
   commentaire_admin: string | null;
   genere_par: string | null;
@@ -90,7 +93,7 @@ export async function genererFichePaie(userId: string, moisISODate: string): Pro
 // Admin: persist manual edits to a still-draft fiche (line items, comment).
 export async function updateFichePaie(
   id: string,
-  patch: Partial<Pick<FichePaie, "details" | "commentaire_admin" | "montant_primes" | "montant_deductions" | "net_a_payer">>
+  patch: Partial<Pick<FichePaie, "details" | "commentaire_admin" | "montant_primes" | "montant_deductions" | "net_a_payer" | "mode_paiement">>
 ): Promise<void> {
   const { error } = await supabase.from("fiches_paie").update(patch as any).eq("id", id);
   if (error) throw error;

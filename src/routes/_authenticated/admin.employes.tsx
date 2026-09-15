@@ -61,36 +61,6 @@ async function callAdminFn(fn: string, body: any) {
   return json;
 }
 
-// Helper: format bilan minutes with sign
-function formatBilanMinutes(minutes: number | null | undefined): string {
-  if (minutes === null || minutes === undefined) return "—";
-  if (minutes === 0) return "0";
-  
-  const absMinutes = Math.abs(minutes);
-  const heures = Math.floor(absMinutes / 60);
-  const mins = absMinutes % 60;
-  const sign = minutes > 0 ? "+" : "-";
-  
-  if (heures === 0) return `${sign}${mins} min`;
-  if (mins === 0) return `${sign}${heures}h`;
-  return `${sign}${heures}h${mins.toString().padStart(2, "0")}`;
-}
-
-// Helper: format bilan minutes with color for PDF (text only, color handled by styling)
-function formatBilanMinutesPlain(minutes: number | null | undefined): string {
-  if (minutes === null || minutes === undefined) return "—";
-  if (minutes === 0) return "0";
-  
-  const absMinutes = Math.abs(minutes);
-  const heures = Math.floor(absMinutes / 60);
-  const mins = absMinutes % 60;
-  const sign = minutes > 0 ? "+" : "-";
-  
-  if (heures === 0) return `${sign}${mins} min`;
-  if (mins === 0) return `${sign}${heures}h`;
-  return `${sign}${heures}h${mins.toString().padStart(2, "0")}`;
-}
-
 // ---- helper: human label for a statut code ----
 function statutLabelFor(statut: string): string {
   if (statut === "ferie") return "Férié";
@@ -102,23 +72,40 @@ function statutLabelFor(statut: string): string {
   return statut || "—";
 }
 
+// ---- helper: "HH:MM" -> hours as a decimal, handling an end time past
+// midnight; returns 0 if either bound is missing ----
+function diffHeures(start: string | null | undefined, end: string | null | undefined): number {
+  if (!start || !end) return 0;
+  const [h1, m1] = start.split(":").map(Number);
+  const [h2, m2] = end.split(":").map(Number);
+  if ([h1, m1, h2, m2].some((n) => Number.isNaN(n))) return 0;
+  let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (mins < 0) mins += 24 * 60;
+  return mins / 60;
+}
+
+// ---- helper: net hours worked for a day record (arrivée → sortie, minus pause) ----
+function workedHoursForRow(r: any): number {
+  let total = diffHeures(r.heure_pointage, r.heure_sortie);
+  if (r.heure_debut_pause && r.heure_fin_pause) {
+    total -= diffHeures(r.heure_debut_pause, r.heure_fin_pause);
+  }
+  return Math.max(total, 0);
+}
+
 // ---- helper: build one PDF table row from a day record ----
 function buildPdfRow(r: any): any[] {
-  const bilanStr = formatBilanMinutesPlain(r.bilan_jour_minutes);
-  let bilanDisplay = bilanStr;
-  if (r.bilan_jour_minutes !== null && r.bilan_jour_minutes !== undefined) {
-    if (r.bilan_jour_minutes > 0) bilanDisplay = `+${bilanStr.replace(/^\+/, '')}`;
-    else if (r.bilan_jour_minutes < 0) bilanDisplay = bilanStr;
-    else bilanDisplay = "0";
-  }
+  const statutDisplay = r.isRestDayWorked ? "Repos travaillé (à payer x2)" : statutLabelFor(r.statut);
+  const retardDisplay = r.isRestDayWorked ? "—" : (r.retard_minutes ? formatMinutesEnHeures(r.retard_minutes) : "—");
 
   return [
     formatDateFR(r.date, "numeric"),
     r.heure_pointage ?? "—",
+    r.heure_debut_pause ?? "—",
+    r.heure_fin_pause ?? "—",
     r.heure_sortie ?? "—",
-    statutLabelFor(r.statut),
-    r.retard_minutes ? formatMinutesEnHeures(r.retard_minutes) : "—",
-    bilanDisplay,
+    statutDisplay,
+    retardDisplay,
     r.taches_realisees ?? "",
   ];
 }
@@ -143,9 +130,18 @@ function groupByMonth(days: any[]): { key: string; label: string; rows: any[] }[
 // ---- helper: tally summary counts/totals for a list of day records ----
 function computeSummary(days: any[]) {
   let summaryPresent = 0, summaryRetard = 0, summaryAbsent = 0, summaryJustifie = 0, summaryConge = 0, summaryFerie = 0;
-  let totalRetardMinutes = 0, totalBilanMinutes = 0, totalTempsSup = 0;
+  let totalRetardMinutes = 0, totalTempsSup = 0;
+  let summaryReposTravaille = 0, totalHeuresReposTravaille = 0;
 
   days.forEach((r: any) => {
+    if (r.isRestDayWorked) {
+      // Worked Saturday/Sunday: tallied separately, not as regular presence
+      // and not folded into "Temps sup." — it's flagged to be paid double later.
+      summaryReposTravaille++;
+      totalHeuresReposTravaille += workedHoursForRow(r);
+      return;
+    }
+
     if (r.statut === "present") summaryPresent++;
     else if (r.statut === "retard") summaryRetard++;
     else if (r.statut === "absent") summaryAbsent++;
@@ -154,11 +150,13 @@ function computeSummary(days: any[]) {
     else if (r.statut === "ferie") summaryFerie++;
 
     if (r.retard_minutes) totalRetardMinutes += r.retard_minutes;
-    if (r.bilan_jour_minutes !== null && r.bilan_jour_minutes !== undefined) totalBilanMinutes += r.bilan_jour_minutes;
     if (r.temps_supplementaire) totalTempsSup += r.temps_supplementaire;
   });
 
-  return { summaryPresent, summaryRetard, summaryAbsent, summaryJustifie, summaryConge, summaryFerie, totalRetardMinutes, totalBilanMinutes, totalTempsSup };
+  return {
+    summaryPresent, summaryRetard, summaryAbsent, summaryJustifie, summaryConge, summaryFerie,
+    totalRetardMinutes, totalTempsSup, summaryReposTravaille, totalHeuresReposTravaille,
+  };
 }
 
 // ---- helper: render one employee's presence report into an existing jsPDF doc ----
@@ -176,7 +174,7 @@ function addEmployeePresenceReport(
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 10;
   const marginRight = 10;
-  const fixedColsWidth = 22 + 18 + 18 + 22 + 18 + 20; // Date, Arrivée, Sortie, Statut, Retard, Bilan
+  const fixedColsWidth = 20 + 16 + 16 + 16 + 16 + 22 + 16; // Date, Arrivée, Début pause, Fin pause, Sortie, Statut, Retard
   const tachesWidth = pageWidth - marginLeft - marginRight - fixedColsWidth;
 
   const months = groupByMonth(days);
@@ -192,20 +190,31 @@ function addEmployeePresenceReport(
     doc.text(month.label, pageWidth / 2, 29, { align: "center" });
 
     autoTable(doc, {
-      head: [["Date", "Arrivée", "Sortie", "Statut", "Retard", "Bilan", "Tâches réalisées"]],
+      head: [["Date", "Arrivée", "Début pause", "Fin pause", "Sortie", "Statut", "Retard", "Tâches réalisées"]],
       body: month.rows.map(buildPdfRow),
       startY: 34,
       margin: { left: marginLeft, right: marginRight },
       styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top" },
       headStyles: { fillColor: [41, 128, 185], fontSize: 9, fontStyle: "bold" },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 18 },
-        2: { cellWidth: 18 },
-        3: { cellWidth: 22 },
-        4: { cellWidth: 18 },
-        5: { cellWidth: 20 },
-        6: { cellWidth: tachesWidth, overflow: "linebreak" },
+        0: { cellWidth: 20 },
+        1: { cellWidth: 16 },
+        2: { cellWidth: 16 },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 16 },
+        5: { cellWidth: 22 },
+        6: { cellWidth: 16 },
+        7: { cellWidth: tachesWidth, overflow: "linebreak" },
+      },
+      didParseCell: (data) => {
+        // Highlight worked rest days (Saturday/Sunday) in the Statut column
+        if (data.section === "body" && data.column.index === 5) {
+          const row = month.rows[data.row.index];
+          if (row?.isRestDayWorked) {
+            data.cell.styles.textColor = [176, 90, 20];
+            data.cell.styles.fontStyle = "bold";
+          }
+        }
       },
     });
   });
@@ -228,8 +237,8 @@ function addEmployeePresenceReport(
     ["Justifiés", s.summaryJustifie.toString()],
     ["Congés", s.summaryConge.toString()],
     ["Fériés", s.summaryFerie.toString()],
-    ["Total bilan", formatBilanMinutesPlain(s.totalBilanMinutes)],
     ["Temps sup.", `${s.totalTempsSup.toFixed(1)}h`],
+    ["Repos travaillés (à payer x2)", `${s.summaryReposTravaille} jour(s) — ${s.totalHeuresReposTravaille.toFixed(1)}h`],
   ];
 
   autoTable(doc, {
@@ -237,11 +246,11 @@ function addEmployeePresenceReport(
     startY: 40,
     styles: { fontSize: 9, cellPadding: 3 },
     columnStyles: {
-      0: { cellWidth: 40, fontStyle: 'bold' },
-      1: { cellWidth: 40 },
+      0: { cellWidth: 55, fontStyle: 'bold' },
+      1: { cellWidth: 45 },
     },
-    tableWidth: 80,
-    margin: { left: (pageWidth - 80) / 2 },
+    tableWidth: 100,
+    margin: { left: (pageWidth - 100) / 2 },
   });
 }
 
@@ -251,7 +260,7 @@ async function exportSingleEmployeePDF(employee: any) {
   const [pointagesResult, demandesResult, feriesResult] = await Promise.all([
     supabase
       .from("pointages")
-      .select("date,heure_pointage,heure_sortie,statut,retard_minutes,taches_realisees,user_id,bilan_jour_minutes,temps_supplementaire")
+      .select("date,heure_pointage,heure_sortie,heure_debut_pause,heure_fin_pause,statut,retard_minutes,taches_realisees,user_id,temps_supplementaire")
       .eq("user_id", employee.id)
       .order("date", { ascending: true })
       .limit(10000),
@@ -301,20 +310,25 @@ async function exportSingleEmployeePDF(employee: any) {
     ferieDates.add(dateStr);
   });
 
-  // Generate all working days in period
+  // Generate all days in period: Mon-Fri are always included (present or
+  // absent), Sat/Sun are only included when the employee actually worked
+  // that day (clocked in) — flagged as a worked rest day rather than
+  // regular overtime.
   const allDays: any[] = [];
   const current = new Date(debut);
   while (current <= fin) {
     const dateStr = toISODate(current);
-    // Only include working days (Mon-Fri)
-    if (current.getDay() !== 0 && current.getDay() !== 6) {
-      const pointage = pointagesByDate.get(dateStr);
+    const isWeekend = current.getDay() === 0 || current.getDay() === 6;
+    const pointage = pointagesByDate.get(dateStr);
+
+    if (!isWeekend) {
       let statut = "absent";
       let heure_pointage = null;
       let heure_sortie = null;
+      let heure_debut_pause = null;
+      let heure_fin_pause = null;
       let retard_minutes = null;
       let taches_realisees = null;
-      let bilan_jour_minutes = null;
       let temps_supplementaire = null;
 
       if (pointage) {
@@ -322,9 +336,10 @@ async function exportSingleEmployeePDF(employee: any) {
         statut = pointage.statut;
         heure_pointage = pointage.heure_pointage;
         heure_sortie = pointage.heure_sortie;
+        heure_debut_pause = pointage.heure_debut_pause;
+        heure_fin_pause = pointage.heure_fin_pause;
         retard_minutes = pointage.retard_minutes;
         taches_realisees = pointage.taches_realisees;
-        bilan_jour_minutes = pointage.bilan_jour_minutes;
         temps_supplementaire = pointage.temps_supplementaire;
       } else if (ferieDates.has(dateStr)) {
         statut = "ferie";
@@ -339,11 +354,28 @@ async function exportSingleEmployeePDF(employee: any) {
         statut,
         heure_pointage,
         heure_sortie,
+        heure_debut_pause,
+        heure_fin_pause,
         retard_minutes,
         taches_realisees,
-        bilan_jour_minutes,
         temps_supplementaire,
-        isFerie: ferieDates.has(dateStr)
+        isFerie: ferieDates.has(dateStr),
+        isRestDayWorked: false,
+      });
+    } else if (pointage && pointage.heure_pointage) {
+      // Rest day (Sat/Sun) actually worked — mark it, don't treat as overtime.
+      allDays.push({
+        date: dateStr,
+        statut: pointage.statut,
+        heure_pointage: pointage.heure_pointage,
+        heure_sortie: pointage.heure_sortie,
+        heure_debut_pause: pointage.heure_debut_pause,
+        heure_fin_pause: pointage.heure_fin_pause,
+        retard_minutes: null,
+        taches_realisees: pointage.taches_realisees,
+        temps_supplementaire: 0,
+        isFerie: ferieDates.has(dateStr),
+        isRestDayWorked: true,
       });
     }
     current.setDate(current.getDate() + 1);
@@ -453,7 +485,8 @@ function AdminEmployes() {
 type FieldConfig = {
   key: string;
   label: string;
-  type?: "text" | "date" | "number" | "boolean" | "textarea";
+  type?: "text" | "date" | "number" | "boolean" | "textarea" | "select";
+  options?: { value: string; label: string }[];
 };
 
 function InlineCardEdit({
@@ -525,6 +558,18 @@ function InlineCardEdit({
                   <SelectContent>
                     <SelectItem value="oui">Oui</SelectItem>
                     <SelectItem value="non">Non</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : f.type === "select" ? (
+                <Select
+                  value={values[f.key] || undefined}
+                  onValueChange={(v) => setValues({ ...values, [f.key]: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Choisir…" /></SelectTrigger>
+                  <SelectContent>
+                    {(f.options ?? []).map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               ) : (
@@ -975,6 +1020,13 @@ function FicheEmploye({
                   { key: "date_naissance", label: "Date de naissance", type: "date" },
                   { key: "nationalite", label: "Nationalité" },
                   { key: "cni", label: "CIN" },
+                  { key: "situation_familiale", label: "Situation familiale", type: "select", options: [
+                    { value: "Célibataire", label: "Célibataire" },
+                    { value: "Marié(e)", label: "Marié(e)" },
+                    { value: "Divorcé(e)", label: "Divorcé(e)" },
+                    { value: "Veuf(ve)", label: "Veuf(ve)" },
+                  ] },
+                  { key: "nombre_enfants", label: "Nombre d'enfants", type: "number" },
                 ]}
               />
               <CardHeader className="pb-2"><CardTitle className="text-sm font-medium flex items-center gap-2"><User className="w-4 h-4" />Identité</CardTitle></CardHeader>
@@ -983,6 +1035,8 @@ function FicheEmploye({
                 <div className="flex justify-between"><span className="text-muted-foreground">Date de naissance</span><span className="font-medium">{employee.date_naissance ? formatDateFR(employee.date_naissance) : "—"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Nationalité</span><span className="font-medium">{employee.nationalite || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">CIN</span><span className="font-medium">{employee.cni || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Situation familiale</span><span className="font-medium">{employee.situation_familiale || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Nombre d'enfants</span><span className="font-medium">{employee.nombre_enfants ?? "—"}</span></div>
               </CardContent>
             </Card>
 
@@ -1652,7 +1706,7 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
     const [pointagesResult, demandesResult, feriesResult] = await Promise.all([
       supabase
         .from("pointages")
-        .select("date,heure_pointage,heure_sortie,statut,retard_minutes,taches_realisees,user_id,bilan_jour_minutes,temps_supplementaire")
+        .select("date,heure_pointage,heure_sortie,heure_debut_pause,heure_fin_pause,statut,retard_minutes,taches_realisees,user_id,temps_supplementaire")
         .order("date", { ascending: true })
         .limit(10000),
       supabase
@@ -1702,16 +1756,16 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
     const profMap = new Map(employees.map((e) => [e.id, `${e.prenom ?? ""} ${e.nom ?? ""}`.trim() || e.email]));
     const doc = new jsPDF("landscape", "mm", "a4");
 
-    const dateRange: string[] = [];
+    // Every calendar day in the period, tagged so weekend dates can be
+    // included per-employee only when actually worked.
+    const dateRange: { date: string; isWeekend: boolean }[] = [];
     let startDate = new Date(debut || "2024-01-01");
     let endDate = new Date(fin || new Date());
-    
-    // Generate all working days in period
+
     const current = new Date(startDate);
     while (current <= endDate) {
-      if (current.getDay() !== 0 && current.getDay() !== 6) {
-        dateRange.push(toISODate(current));
-      }
+      const isWeekend = current.getDay() === 0 || current.getDay() === 6;
+      dateRange.push({ date: toISODate(current), isWeekend });
       current.setDate(current.getDate() + 1);
     }
 
@@ -1723,36 +1777,59 @@ function ExportPDFDialog({ employees }: { employees: any[] }) {
     for (const uid of userIds) {
       const userConges = congeDatesByUser.get(uid) || new Set();
 
-      // Build day records for this employee
-      const days = dateRange.map((dateStr) => {
+      // Build day records for this employee: weekdays are always included
+      // (present or absent), weekend dates only when actually worked —
+      // flagged as a worked rest day rather than regular overtime.
+      const days: any[] = [];
+      dateRange.forEach(({ date: dateStr, isWeekend }) => {
         const key = `${uid}|${dateStr}`;
         const pointage = pointagesByUserDate.get(key);
 
-        let statut = "absent";
-        let heure_pointage = null;
-        let heure_sortie = null;
-        let retard_minutes = null;
-        let taches_realisees = null;
-        let bilan_jour_minutes = null;
-        let temps_supplementaire = null;
+        if (!isWeekend) {
+          let statut = "absent";
+          let heure_pointage = null;
+          let heure_sortie = null;
+          let heure_debut_pause = null;
+          let heure_fin_pause = null;
+          let retard_minutes = null;
+          let taches_realisees = null;
+          let temps_supplementaire = null;
 
-        if (pointage) {
-          statut = pointage.statut;
-          heure_pointage = pointage.heure_pointage;
-          heure_sortie = pointage.heure_sortie;
-          retard_minutes = pointage.retard_minutes;
-          taches_realisees = pointage.taches_realisees;
-          bilan_jour_minutes = pointage.bilan_jour_minutes;
-          temps_supplementaire = pointage.temps_supplementaire;
-        } else if (ferieDates.has(dateStr)) {
-          statut = "ferie";
-        } else if (userConges.has(dateStr)) {
-          statut = "conge";
-        } else {
-          statut = "absent";
+          if (pointage) {
+            statut = pointage.statut;
+            heure_pointage = pointage.heure_pointage;
+            heure_sortie = pointage.heure_sortie;
+            heure_debut_pause = pointage.heure_debut_pause;
+            heure_fin_pause = pointage.heure_fin_pause;
+            retard_minutes = pointage.retard_minutes;
+            taches_realisees = pointage.taches_realisees;
+            temps_supplementaire = pointage.temps_supplementaire;
+          } else if (ferieDates.has(dateStr)) {
+            statut = "ferie";
+          } else if (userConges.has(dateStr)) {
+            statut = "conge";
+          } else {
+            statut = "absent";
+          }
+
+          days.push({
+            date: dateStr, statut, heure_pointage, heure_sortie, heure_debut_pause, heure_fin_pause,
+            retard_minutes, taches_realisees, temps_supplementaire, isRestDayWorked: false,
+          });
+        } else if (pointage && pointage.heure_pointage) {
+          days.push({
+            date: dateStr,
+            statut: pointage.statut,
+            heure_pointage: pointage.heure_pointage,
+            heure_sortie: pointage.heure_sortie,
+            heure_debut_pause: pointage.heure_debut_pause,
+            heure_fin_pause: pointage.heure_fin_pause,
+            retard_minutes: null,
+            taches_realisees: pointage.taches_realisees,
+            temps_supplementaire: 0,
+            isRestDayWorked: true,
+          });
         }
-
-        return { date: dateStr, statut, heure_pointage, heure_sortie, retard_minutes, taches_realisees, bilan_jour_minutes, temps_supplementaire };
       });
 
       addEmployeePresenceReport(

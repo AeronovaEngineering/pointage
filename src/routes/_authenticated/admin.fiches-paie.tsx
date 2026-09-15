@@ -52,7 +52,7 @@ function AdminFichesPaie() {
     queryKey: ["employees-list"],
     queryFn: async () => {
       const [{ data: profiles }, { data: roles }] = await Promise.all([
-        supabase.from("profiles").select("id,nom,prenom,poste,departement,cni,num_secu,date_embauche,actif").order("nom"),
+        supabase.from("profiles").select("id,nom,prenom,poste,departement,cni,num_secu,date_embauche,actif,type_contrat,situation_familiale,nombre_enfants").order("nom"),
         supabase.from("user_roles").select("user_id,role"),
       ]);
       const adminIds = new Set((roles ?? []).filter((r) => r.role === "admin").map((r) => r.user_id));
@@ -164,13 +164,13 @@ function AdminFichesPaie() {
       ) : (
         <FicheEditor
           fiche={fiche}
+          employee={employee}
           employeeName={employee ? displayName(employee) : ""}
           saving={saving}
           onRegenerate={generer}
           onValider={valider}
           onDevalider={devalider}
           onSaved={refresh}
-          onDownload={() => employee && downloadFichePaiePDF(fiche, employee)}
         />
       )}
     </div>
@@ -179,25 +179,26 @@ function AdminFichesPaie() {
 
 function FicheEditor({
   fiche,
+  employee,
   employeeName,
   saving,
   onRegenerate,
   onValider,
   onDevalider,
   onSaved,
-  onDownload,
 }: {
   fiche: FichePaie;
+  employee: any;
   employeeName: string;
   saving: boolean;
   onRegenerate: () => void;
   onValider: () => void;
   onDevalider: () => void;
   onSaved: () => void;
-  onDownload: () => void;
 }) {
   const [details, setDetails] = useState<FichePaieDetailLine[]>(fiche.details);
   const [commentaire, setCommentaire] = useState(fiche.commentaire_admin ?? "");
+  const [modePaiement, setModePaiement] = useState<string>(fiche.mode_paiement ?? "");
   const [dirty, setDirty] = useState(false);
   const readOnly = fiche.statut === "validee";
 
@@ -205,6 +206,7 @@ function FicheEditor({
   useMemo(() => {
     setDetails(fiche.details);
     setCommentaire(fiche.commentaire_admin ?? "");
+    setModePaiement(fiche.mode_paiement ?? "");
     setDirty(false);
   }, [fiche.id, fiche.updated_at]);
 
@@ -227,7 +229,12 @@ function FicheEditor({
 
   const save = async () => {
     try {
-      await updateFichePaie(fiche.id, { details, commentaire_admin: commentaire || null, net_a_payer: net });
+      await updateFichePaie(fiche.id, {
+        details,
+        commentaire_admin: commentaire || null,
+        net_a_payer: net,
+        mode_paiement: modePaiement || null,
+      });
       toast.success("Modifications enregistrées");
       setDirty(false);
       onSaved();
@@ -254,6 +261,22 @@ function FicheEditor({
           <Stat label="Congés" value={String(fiche.jours_conge)} />
           <Stat label="Retard" value={formatMinutesEnHeures(fiche.retard_minutes)} />
           <Stat label="H. sup." value={`${fiche.heures_supplementaires.toFixed(1)}h`} />
+        </div>
+
+        <div className="space-y-1 max-w-xs">
+          <Label>Type de virement</Label>
+          <Select
+            value={modePaiement}
+            disabled={readOnly}
+            onValueChange={(v) => { setModePaiement(v); setDirty(true); }}
+          >
+            <SelectTrigger><SelectValue placeholder="Choisir un mode" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Virement bancaire">Virement bancaire</SelectItem>
+              <SelectItem value="Chèque">Chèque</SelectItem>
+              <SelectItem value="Espèces">Espèces</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <Separator />
@@ -317,7 +340,10 @@ function FicheEditor({
         </div>
 
         <div className="flex flex-wrap gap-2 justify-end">
-          <Button variant="outline" onClick={onDownload}>
+          <Button
+            variant="outline"
+            onClick={() => employee && downloadFichePaiePDF(fiche, { ...employee, mode_paiement: modePaiement || null })}
+          >
             <Download className="w-4 h-4 mr-2" />
             PDF
           </Button>

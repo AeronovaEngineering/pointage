@@ -31,6 +31,8 @@ export interface UserProfile {
   manager?: string;
   type_contrat?: string;
   politique_horaire?: string;
+  situation_familiale?: string;
+  nombre_enfants?: number;
   created_at?: string;
   updated_at?: string;
 }

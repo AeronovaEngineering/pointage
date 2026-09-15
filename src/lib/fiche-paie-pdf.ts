@@ -11,6 +11,11 @@ interface EmployeeInfo {
   cni?: string | null;
   num_secu?: string | null; // N° CNSS
   date_embauche?: string | null;
+  type_contrat?: string | null;
+  mode_paiement?: string | null; // Virement, Chèque, Espèce
+  categorie?: string | null;
+  situation_familiale?: string | null;
+  nombre_enfants?: number | string | null;
 }
 
 interface CompanyInfo {
@@ -59,6 +64,25 @@ function resolveNombre(label: string, fiche: FichePaie): number | undefined {
     return fiche.heures_supplementaires;
   if (l.includes("férié") || l.includes("majoré")) return fiche.jours_feries_travailles;
   if (l.includes("présence") || l.includes("travaillé") || l.includes("base")) return fiche.jours_travailles;
+
+  return undefined;
+}
+
+/**
+ * Resolve the "Taux" column for a given rubrique from the rates persisted
+ * on the fiche itself (computed once in SQL) — never re-derived from
+ * montant / nombre, which used to silently paper over whatever divisor the
+ * backend actually used (the "salaire ÷ jours_travailles instead of ÷30"
+ * bug). Returns undefined when the rubrique has no single applicable rate
+ * (e.g. Primes).
+ */
+function resolveTaux(label: string, fiche: FichePaie): number | undefined {
+  const l = label.toLowerCase();
+
+  if (l.includes("absence")) return fiche.taux_journalier;
+  if (l.includes("supplémentaire") || l.includes("heure sup") || l.includes("heures sup"))
+    return fiche.taux_horaire_sup;
+  if (l.includes("férié") || l.includes("majoré")) return fiche.taux_journalier;
 
   return undefined;
 }
@@ -121,17 +145,22 @@ export function buildFichePaiePDF(
 
   autoTable(doc, {
     startY: y,
-    head: [["CIN", "Nom & Prénom", "N° CNSS", "Poste", "Département"]],
+    head: [["CIN", "Nom & Prénom", "N° CNSS", "Poste", "Département", "Catégorie", "Situation familiale", "Nb enfants"]],
     body: [[
       employee.cni || "—",
       nomComplet,
       employee.num_secu || "—",
       employee.poste || "—",
       employee.departement || "—",
+      employee.categorie || "—",
+      employee.situation_familiale || "—",
+      employee.nombre_enfants !== undefined && employee.nombre_enfants !== null && employee.nombre_enfants !== ""
+        ? String(employee.nombre_enfants)
+        : "—",
     ]],
     theme: "grid",
-    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8.5, fontStyle: "bold", halign: "center" },
-    bodyStyles: { fontSize: 9.5, halign: "center", textColor: INK },
+    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 7.5, fontStyle: "bold", halign: "center" },
+    bodyStyles: { fontSize: 9, halign: "center", textColor: INK },
     alternateRowStyles: { fillColor: GOLD_FAINT },
     styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15, cellPadding: 3 },
     margin: { left: marginLeft, right: marginRight },
@@ -139,22 +168,28 @@ export function buildFichePaiePDF(
 
   y = (doc as any).lastAutoTable.finalY + 9;
 
-  // ---- 2. Congés ----
-  sectionTitle(doc, "Congés", marginLeft, y, contentWidth);
+  // ---- 2. Détails de contrat ----
+  sectionTitle(doc, "Détails de contrat", marginLeft, y, contentWidth);
   y += 3;
 
   autoTable(doc, {
     startY: y,
-    head: [["Droit congé annuel", "Solde disponible", "Congés pris ce mois"]],
+    head: [[
+      "Type de contrat", "Date d'embauche", "Mode de paiement",
+      "Droit congé", "Solde restant", "Congés pris ce mois",
+    ]],
     body: [[
-      `${fiche.droit_conge} jours`,
-      `${fiche.solde_conge} jours`,
-      `${fiche.jours_conge} jours`,
+      employee.type_contrat || "—",
+      employee.date_embauche || "—",
+      employee.mode_paiement || "—",
+      `${fiche.droit_conge} j`,
+      `${fiche.solde_conge} j`,
+      `${fiche.jours_conge} j`,
     ]],
     theme: "grid",
-    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8.5, fontStyle: "bold", halign: "center" },
-    bodyStyles: { fontSize: 10, halign: "center", textColor: INK },
-    styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15, cellPadding: 3 },
+    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 7.5, fontStyle: "bold", halign: "center" },
+    bodyStyles: { fontSize: 8.5, halign: "center", textColor: INK },
+    styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15, cellPadding: 2.5 },
     margin: { left: marginLeft, right: marginRight },
   });
 
@@ -187,21 +222,34 @@ export function buildFichePaiePDF(
   sectionTitle(doc, "Détails paie", marginLeft, y, contentWidth);
   y += 3;
 
-  const rows = fiche.details.map((d) => {
+  const rows: string[][] = [];
+  fiche.details.forEach((d) => {
     const isDeduction = d.type === "deduction" || d.montant < 0;
     const montant = Math.abs(d.montant);
+    const isBase = /base/i.test(d.label); // Salaire de base → no Nombre, no Taux
 
-    const nombre = resolveNombre(d.label, fiche);
-    const isBase = /base/i.test(d.label); // Salaire de base → no Taux
-    const taux = !isBase ? (nombre && nombre > 0 ? montant / nombre : montant) : undefined;
+    const nombre = isBase ? undefined : resolveNombre(d.label, fiche);
+    const taux = !isBase ? resolveTaux(d.label, fiche) : undefined;
 
-    return [
+    rows.push([
       d.label,
       nombre !== undefined ? (nombre % 1 === 0 ? String(nombre) : nombre.toFixed(2)) : "",
       taux !== undefined ? NUM(taux) : "",
       isDeduction ? "" : DT(montant),
       isDeduction ? DT(montant) : "",
-    ];
+    ]);
+
+    if (isBase) {
+      const jours = fiche.jours_travailles;
+
+      rows.push([
+        "Nombre de jours présent",
+        jours !== undefined ? String(jours) : "",
+        "30.00",
+        "",
+        "",
+      ]);
+    }
   });
 
   autoTable(doc, {
@@ -258,17 +306,20 @@ export function buildFichePaiePDF(
   const maxSigY = pageHeight - 42;   // hard cap: content never pushes it past this
   const sigY = Math.min(Math.max(y + 12, idealSigY), maxSigY);
   const colWidth = contentWidth / 2;
+  const leftCenterX = marginLeft + colWidth / 2;
+  const rightCenterX = marginLeft + colWidth + colWidth / 2;
+  const sigLineWidth = 55; // fixed width, centered under each label
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(...INK);
-  doc.text("Signature et cachet de l'entreprise", marginLeft, sigY);
-  doc.text("Signature employé", marginLeft + colWidth, sigY);
+  doc.text("Signature et cachet de l'entreprise", leftCenterX, sigY, { align: "center" });
+  doc.text("Signature employé", rightCenterX, sigY, { align: "center" });
 
   doc.setDrawColor(...GOLD_LIGHT);
   doc.setLineWidth(0.2);
-  doc.line(marginLeft, sigY + 22, marginLeft + colWidth - 12, sigY + 22);
-  doc.line(marginLeft + colWidth, sigY + 22, pageWidth - marginRight, sigY + 22);
+  doc.line(leftCenterX - sigLineWidth / 2, sigY + 22, leftCenterX + sigLineWidth / 2, sigY + 22);
+  doc.line(rightCenterX - sigLineWidth / 2, sigY + 22, rightCenterX + sigLineWidth / 2, sigY + 22);
 
   return doc;
 }
