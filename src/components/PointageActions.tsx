@@ -46,6 +46,13 @@ export function PointageActions({ userId }: { userId: string }) {
     },
   });
 
+  const hasArrivee = !!p?.heure_pointage;
+  const hasPauseDebut = !!p?.heure_debut_pause;
+  const hasPauseFin = !!p?.heure_fin_pause;
+  const hasSortie = !!p?.heure_sortie;
+  // La fin de journée n'est possible qu'après une pause complète (début + fin)
+  const pauseTaken = hasPauseDebut && hasPauseFin;
+
   // Vérifier si la géolocalisation est configurée
   const checkGeolocationEnabled = async () => {
     const { data } = await supabase
@@ -56,6 +63,10 @@ export function PointageActions({ userId }: { userId: string }) {
   };
 
   const doAction = async (action: Action) => {
+    if (action === "sortie" && !pauseTaken) {
+      toast.error("Vous devez prendre votre pause avant de terminer la journée");
+      return;
+    }
     if (action === "sortie" && !taches.trim()) {
       toast.error("Merci de saisir vos tâches réalisées avant de terminer la journée");
       return;
@@ -64,7 +75,7 @@ export function PointageActions({ userId }: { userId: string }) {
 
     let lat: number | undefined = undefined;
     let lng: number | undefined = undefined;
-    
+
     // GPS verification for pause_fin and sortie
     if (action === "pause_fin" || action === "sortie") {
       const gpsEnabled = await checkGeolocationEnabled();
@@ -90,7 +101,7 @@ export function PointageActions({ userId }: { userId: string }) {
       _taches: action === "sortie" ? taches : undefined,
     });
     setLoading(null);
-    
+
     if (error) {
       // Handle specific location errors with custom messages
       if (error.message.includes("Localisation requise")) {
@@ -103,14 +114,14 @@ export function PointageActions({ userId }: { userId: string }) {
       }
       return toast.error(error.message);
     }
-    
+
     const msgs: Record<Action, string> = {
       arrivee: "Arrivée pointée",
       pause_debut: "Début de pause enregistré",
       pause_fin: "Reprise du travail enregistrée",
       sortie: "Fin de journée enregistrée. Bonne soirée !",
     };
-    
+
     toast.success(msgs[action]);
     if (action === "sortie") setTaches("");
     qc.invalidateQueries({ queryKey: ["pointage-today", userId] });
@@ -129,11 +140,6 @@ export function PointageActions({ userId }: { userId: string }) {
       </div>
     );
   }
-
-  const hasArrivee = !!p?.heure_pointage;
-  const hasPauseDebut = !!p?.heure_debut_pause;
-  const hasPauseFin = !!p?.heure_fin_pause;
-  const hasSortie = !!p?.heure_sortie;
 
   return (
     <div className="space-y-4">
@@ -178,11 +184,18 @@ export function PointageActions({ userId }: { userId: string }) {
         <Button
           variant="secondary"
           className="col-span-2"
-          disabled={!hasArrivee || hasSortie || !taches.trim() || loading !== null}
+          disabled={!hasArrivee || hasSortie || !pauseTaken || !taches.trim() || loading !== null}
           onClick={() => doAction("sortie")}
         >
           <LogOut className="w-4 h-4 mr-2" />Fin de journée
         </Button>
+        {hasArrivee && !hasSortie && !pauseTaken && (
+          <p className="col-span-2 text-xs text-muted-foreground">
+            {hasPauseDebut
+              ? "Terminez votre pause (Fin pause) pour pouvoir clôturer la journée."
+              : "Prenez votre pause pour pouvoir clôturer la journée."}
+          </p>
+        )}
       </div>
 
       {hasArrivee && !hasSortie && (
