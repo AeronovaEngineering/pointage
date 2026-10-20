@@ -1,7 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FichePaie, moisLabel } from "@/lib/fiche-paie";
-import { formatMinutesEnHeures } from "@/lib/format";
 import { AMIRI_BASE64 } from "@/lib/arabic-font";
 
 interface EmployeeInfo {
@@ -41,7 +40,7 @@ const BLACK: RGB = [23, 23, 23];
 const GOLD: RGB = [176, 137, 62];
 const GOLD_LIGHT: RGB = [232, 219, 189];
 const GRAY: RGB = [120, 120, 120];
-const INK: RGB = [40, 40, 40];
+const INK: RGB = BLACK;
 const RED: RGB = [150, 40, 40];
 
 // 1865.945 -> "1 865.945" (3 decimals = dinar millimes, space thousands separator)
@@ -199,7 +198,7 @@ function render(
       head: [head],
       body: [body],
       theme: "grid",
-      headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 7.5, fontStyle: "bold", halign: "center", cellPadding: 2 },
+      headStyles: { fillColor: false, textColor: BLACK, fontSize: 7.5, fontStyle: "bold", halign: "center", cellPadding: 2 },
       bodyStyles: { fontSize: 9, halign: "center", textColor: INK, cellPadding: 2.4 },
       styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15 },
       columnStyles: Object.fromEntries(widths.map((w, k) => [k, { cellWidth: w }])),
@@ -243,20 +242,17 @@ function render(
   autoTable(doc, {
     startY: y,
     head: [[
-      "Jours travaillés", "Absences", "Retards", "H. sup. brutes", "H. sup. payées",
+      "Jours travaillés", "Absences",
       "Congés pris", "Solde congé",
     ]],
     body: [[
       String(fiche.jours_travailles),
       String(fiche.jours_absence),
-      formatMinutesEnHeures(fiche.retard_minutes),
-      `${fiche.heures_supplementaires_brutes.toFixed(2)}h`,
-      `${fiche.heures_supplementaires.toFixed(2)}h`,
       `${fiche.jours_conge} j`,
       `${fiche.solde_conge} / ${fiche.droit_conge} j`,
     ]],
     theme: "grid",
-    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 7.5, fontStyle: "bold", halign: "center", cellPadding: 2 },
+    headStyles: { fillColor: false, textColor: BLACK, fontSize: 7.5, fontStyle: "bold", halign: "center", cellPadding: 2 },
     bodyStyles: { fontSize: 9, halign: "center", textColor: INK, cellPadding: 2.2 },
     styles: { lineColor: GOLD_LIGHT, lineWidth: 0.15 },
     margin: { left: marginLeft, right: marginRight },
@@ -335,7 +331,7 @@ function render(
     head: [["Rubrique", "Base", "Nombre", "Gain (DT)", "Retenue (DT)"]],
     body: rows,
     theme: "grid",
-    headStyles: { fillColor: BLACK, textColor: GOLD, fontSize: 8.5, fontStyle: "bold", halign: "center", cellPadding: 2 },
+    headStyles: { fillColor: false, textColor: BLACK, fontSize: 8.5, fontStyle: "bold", halign: "center", cellPadding: 2 },
     styles: {
       fontSize: fs,
       cellPadding: { top: pad, bottom: pad, left: 2.5, right: 2.5 },
@@ -374,19 +370,17 @@ function render(
   y = (doc as any).lastAutoTable.finalY + 5;
 
   // ------------------------------------------------------- Net à payer banner
-  doc.setFillColor(...BLACK);
-  doc.rect(marginLeft, y, contentWidth, bannerH, "F");
   doc.setDrawColor(...GOLD);
   doc.setLineWidth(0.5);
   doc.rect(marginLeft, y, contentWidth, bannerH, "S");
-  doc.setTextColor(...GOLD);
+  doc.setTextColor(...BLACK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text("NET À PAYER", marginLeft + 5, y + bannerH / 2 + 1.4);
-  ar("الصافي للدفع", marginLeft + 52, y + bannerH / 2 + 1.6, 11, GOLD);
+  ar("الصافي للدفع", marginLeft + 52, y + bannerH / 2 + 1.6, 11, BLACK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12.5);
-  doc.setTextColor(...GOLD);
+  doc.setTextColor(...BLACK);
   doc.text(`${fmt(fiche.net_a_payer)} DT`, R - 5, y + bannerH / 2 + 1.4, { align: "right" });
 
   y += bannerH + 6;
